@@ -3,8 +3,11 @@ import { Button } from '@nubase/ui';
 
 const NAV = [
   { href: '/features', label: 'Features' },
+  { href: '/compare', label: 'Compare' },
   { href: '/docs', label: 'Docs' },
-  { href: 'https://github.com', label: 'GitHub' },
+  { href: '/blog', label: 'Blog' },
+  { href: '/news', label: 'News' },
+  { href: 'https://github.com/OtterMind/Nubase', label: 'GitHub' },
 ];
 
 export function SiteHeader() {

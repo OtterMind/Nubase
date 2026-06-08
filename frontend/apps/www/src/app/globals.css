@@ -1,3 +1,220 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ----------------------------------------------------------------------------
+   Nubase site design system — deep-navy + brand-green, editorial-technical.
+   Distinctive display (Bricolage Grotesque) over a clean grotesque body.
+---------------------------------------------------------------------------- */
+
+:root {
+  --nb-bg: #0a0f1d;
+  --nb-bg-2: #0e1526;
+  --nb-green: #3de3af;
+  --nb-green-deep: #10a074;
+  --nb-ink: #e8eefb;
+  --nb-dim: #93a0bb;
+  --nb-line: rgba(125, 145, 185, 0.14);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background: var(--nb-bg);
+    color: var(--nb-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: rgba(61, 227, 175, 0.28);
+    color: #fff;
+  }
+  /* Prefer the distinctive display face for marketing headings */
+  h1,
+  h2 {
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    letter-spacing: -0.025em;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    letter-spacing: -0.025em;
+  }
+  .text-green {
+    color: var(--nb-green);
+  }
+  .border-faint {
+    border-color: var(--nb-line);
+  }
+
+  /* Atmosphere: dotted grid + soft radial green glow ----------------------- */
+  .nb-grid {
+    background-image:
+      linear-gradient(to right, var(--nb-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--nb-line) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 78%);
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 35%, transparent 78%);
+  }
+  .nb-glow {
+    background:
+      radial-gradient(48rem 32rem at 18% -8%, rgba(61, 227, 175, 0.22), transparent 60%),
+      radial-gradient(40rem 28rem at 92% 6%, rgba(16, 160, 116, 0.16), transparent 62%);
+  }
+  /* Fine grain overlay for depth (data-URI SVG noise) */
+  .nb-grain::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.4;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  }
+
+  /* Brand-green text gradient for hero highlights */
+  .nb-gradient-text {
+    background: linear-gradient(120deg, var(--nb-green) 0%, var(--nb-green-deep) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Glassy card + green hover lift */
+  .nb-card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+    border: 1px solid var(--nb-line);
+    border-radius: 16px;
+    transition:
+      transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1),
+      border-color 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+  .nb-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(61, 227, 175, 0.45);
+    box-shadow: 0 18px 50px -24px rgba(61, 227, 175, 0.4);
+  }
+
+  /* Staggered page-load reveals (set animation-delay inline) */
+  .nb-reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    animation: nb-reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  @keyframes nb-reveal {
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nb-reveal {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Slow pulse for the "live memory" node accents */
+  .nb-pulse {
+    animation: nb-pulse 3.2s ease-in-out infinite;
+  }
+  @keyframes nb-pulse {
+    0%,
+    100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  /* Drifting aurora mesh for hero depth */
+  .nb-aurora {
+    background:
+      radial-gradient(36rem 24rem at 12% 18%, rgba(61, 227, 175, 0.18), transparent 60%),
+      radial-gradient(34rem 22rem at 88% 8%, rgba(16, 160, 116, 0.16), transparent 62%),
+      radial-gradient(30rem 26rem at 60% 100%, rgba(61, 227, 175, 0.1), transparent 60%);
+    filter: blur(8px);
+    animation: nb-drift 18s ease-in-out infinite alternate;
+  }
+  @keyframes nb-drift {
+    0% {
+      transform: translate3d(-2%, -1%, 0) scale(1);
+    }
+    100% {
+      transform: translate3d(2%, 2%, 0) scale(1.08);
+    }
+  }
+
+  /* Animated brand gradient text */
+  .nb-shift {
+    background: linear-gradient(100deg, #3de3af, #7af0cf, #10a074, #3de3af);
+    background-size: 280% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: nb-shiftbg 8s ease infinite;
+  }
+  @keyframes nb-shiftbg {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  /* Marquee row for the "works with" strip */
+  .nb-marquee {
+    display: flex;
+    width: max-content;
+    animation: nb-marquee 32s linear infinite;
+  }
+  @keyframes nb-marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  .nb-mask-x {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  }
+
+  /* Conic gradient glow ring around a featured card */
+  .nb-ring {
+    position: relative;
+    border-radius: 18px;
+  }
+  .nb-ring::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(from 0deg, transparent 0%, rgba(61, 227, 175, 0.75) 18%, transparent 38%, transparent 60%, rgba(16, 160, 116, 0.6) 78%, transparent 96%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: nb-spin 6s linear infinite;
+  }
+  @keyframes nb-spin {
+    to {
+      transform: rotate(1turn);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nb-aurora,
+    .nb-marquee,
+    .nb-ring::before,
+    .nb-shift {
+      animation: none;
+    }
+  }
+}
