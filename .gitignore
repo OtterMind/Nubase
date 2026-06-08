@@ -69,7 +69,6 @@ application-secrets.yml
 # OS
 .DS_Store
 Thumbs.db
-/.dockerignore
 .postgrest.config
 
 # Claude Code local settings
