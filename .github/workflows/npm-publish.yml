@@ -63,6 +63,8 @@ jobs:
           echo "Publishing nubase_cli@$PKG"
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        # NOTE: add `--provenance` back once the GitHub repo is PUBLIC — npm provenance
+        # only works for public source repos (id-token: write above is kept ready for it).
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
