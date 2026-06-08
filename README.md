@@ -8,23 +8,7 @@
 
 ## ⚡ Quick Start
 
-### 1. Run Nubase — one command
-
-The all-in-one Docker image bundles **PostgreSQL + Redis + the backend + Studio**:
-
-```bash
-docker run -d --name nubase \
-  -p 3000:3000 -p 9999:9999 -p 5432:5432 \
-  -v nubase_data:/data \
-  <your-namespace>/nubase:latest
-```
-
-- **Studio** → http://localhost:3000 — create an account, create a project, click **Provision** to initialize its database.
-- **API** → http://localhost:9999
-
-> First-boot secrets are generated into the `/data` volume; keep the volume to retain your projects. For a real deployment with stable secrets, see [Self-host with Docker](#-self-host-with-docker).
-
-### 2. Use Nubase in Claude Code or Codex — one command
+### 1. Use Nubase in Claude Code or Codex — one command
 
 From your project folder, run:
 
@@ -43,12 +27,28 @@ Then:
 - **Claude Code** — restart it in this folder, run `/mcp`, and confirm `nubase` is connected.
 - **Codex** — it's added to `~/.codex/config.toml`; just start Codex.
 
-> Using a remote/hosted instance instead of localhost? Point the CLI at it:
+> This connects your agent to a Nubase instance (a hosted one, or your own — spin one up in step 2). Point the CLI at any instance with:
 > ```bash
 > npx -y nubase_cli@latest install-skills \
 >   --studio-url https://studio.example.com \
 >   --nubase-url https://api.example.com
 > ```
+
+### 2. Run your own Nubase — one command
+
+The all-in-one Docker image bundles **PostgreSQL + Redis + the backend + Studio**:
+
+```bash
+docker run -d --name nubase \
+  -p 3000:3000 -p 9999:9999 -p 5432:5432 \
+  -v nubase_data:/data \
+  <your-namespace>/nubase:latest
+```
+
+- **Studio** → http://localhost:3000 — create an account, create a project, click **Provision** to initialize its database.
+- **API** → http://localhost:9999
+
+> First-boot secrets are generated into the `/data` volume; keep the volume to retain your projects. For a real deployment with stable secrets, see [Self-host with Docker](#-self-host-with-docker).
 
 ### 3. Build with your agent
 
