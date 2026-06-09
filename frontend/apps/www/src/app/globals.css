@@ -15,6 +15,11 @@
   --nb-ink: #e8eefb;
   --nb-dim: #93a0bb;
   --nb-line: rgba(125, 145, 185, 0.14);
+
+  /* Self-hosted font stacks (loaded via @fontsource in layout.tsx) */
+  --font-display: 'Bricolage Grotesque Variable', 'Hanken Grotesk Variable', system-ui, sans-serif;
+  --font-sans: 'Hanken Grotesk Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 }
 
 @layer base {

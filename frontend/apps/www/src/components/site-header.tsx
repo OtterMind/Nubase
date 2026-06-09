@@ -47,7 +47,7 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          <Link href="http://localhost:3000/projects">
+          <Link href="/studio/projects">
             <Button size="sm" variant="brand">
               Open Studio
             </Button>

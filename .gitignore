@@ -91,3 +91,8 @@ frontend/packages/mcp-bridge/*.tgz
 script/deploy/rolling-deploy.sh
 # APISIX bootstrap carries real admin key + IPs — keep local only
 script/deploy/init_apisix.sh
+
+# www/APISIX deploy scripts carry prod origin IPs + APISIX admin key — keep local only
+script/deploy/www-deploy.sh
+script/deploy/apisix-www-routes.sh
+/script/deploy/nubase-www.service
