@@ -14,7 +14,7 @@ const GH = 'https://github.com/OtterMind/Nubase';
 
 function Logo({ className = 'h-8 w-8' }: { className?: string }) {
   return (
-    <span className="inline-flex items-center justify-center rounded-xl bg-[var(--nb-mint)] p-1.5 shadow-[0_8px_20px_-10px_rgba(20,180,137,0.8)]">
+    <span className="inline-flex items-center justify-center rounded-xl bg-gradient-to-b from-[var(--nb-mint)] to-[var(--nb-mint-deep)] p-1.5 shadow-[0_8px_20px_-10px_rgba(20,180,137,0.85),0_2px_4px_-1px_rgba(7,121,90,0.3),inset_0_1px_0_rgba(255,255,255,0.55),inset_0_-2px_5px_rgba(7,121,90,0.4)]">
       <svg viewBox="0 0 320 320" className={className} fill="none" aria-hidden="true">
         <path
           d="M104 240 V80 L216 240 V80"

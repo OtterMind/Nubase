@@ -43,7 +43,7 @@ export function SiteFooter() {
       <div className="container relative grid gap-10 py-16 md:grid-cols-[1.5fr_repeat(4,1fr)]">
         <div className="max-w-xs">
           <div className="mb-3 flex items-center gap-2.5">
-            <span className="inline-flex items-center justify-center rounded-xl bg-[var(--nb-mint)] p-1.5">
+            <span className="inline-flex items-center justify-center rounded-xl bg-gradient-to-b from-[var(--nb-mint)] to-[var(--nb-mint-deep)] p-1.5 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.5),inset_0_-2px_5px_rgba(7,121,90,0.4)]">
               <svg viewBox="0 0 320 320" className="h-5 w-5" fill="none" aria-hidden="true">
                 <path
                   d="M104 240 V80 L216 240 V80"
