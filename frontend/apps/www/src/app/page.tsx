@@ -18,6 +18,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@nubase/ui';
+import { GoogleOneTap } from '@/components/google-one-tap';
 
 const GH = 'https://github.com/OtterMind/Nubase';
 
@@ -132,6 +133,8 @@ const FAQ: [string, string][] = [
 export default function Home() {
   return (
     <main className="overflow-hidden">
+      {/* Google One Tap — auto-hidden unless the backend has Google configured. */}
+      <GoogleOneTap />
       {/* ---------------------------------------------------------------- HERO */}
       <section className="relative nb-grain">
         <div className="pointer-events-none absolute inset-0 -z-10 nb-aurora" />

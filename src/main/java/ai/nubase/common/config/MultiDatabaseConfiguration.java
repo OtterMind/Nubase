@@ -11,9 +11,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
+import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -59,11 +62,52 @@ import java.util.concurrent.TimeUnit;
         entityManagerFactoryRef = "entityManagerFactory",
         transactionManagerRef = "transactionManager"
 )
-public class MultiDatabaseConfiguration {
+public class MultiDatabaseConfiguration implements CachingConfigurer {
 
     // ApplicationContext is no longer required since DatabaseRoutingInterceptor is disabled
     // @Autowired
     // private ApplicationContext applicationContext;
+
+    /**
+     * Make the cache layer fail-soft. The cache (Caffeine or Redis) is an optimization, not a
+     * source of truth — a transient backend hiccup (e.g. a momentary Redis/DNS blip on one node)
+     * must never fail the underlying business operation.
+     *
+     * <p>Without this, a Redis {@code @CacheEvict} during project creation
+     * ({@link ai.nubase.postgrest.multidb.DatabaseConfigRepository#save}) would propagate a
+     * {@code RedisConnectionFailureException} and abort the whole create. Here we instead:
+     * <ul>
+     *   <li>GET error → treat as a cache miss (fall through to the database)</li>
+     *   <li>PUT / EVICT / CLEAR error → log and continue (entry self-heals on its TTL)</li>
+     * </ul>
+     */
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new CacheErrorHandler() {
+            @Override
+            public void handleCacheGetError(RuntimeException ex, Cache cache, Object key) {
+                log.warn("Cache GET degraded to a miss [cache={}, key={}]: {}",
+                        cache.getName(), key, ex.toString());
+            }
+
+            @Override
+            public void handleCachePutError(RuntimeException ex, Cache cache, Object key, Object value) {
+                log.warn("Cache PUT skipped [cache={}, key={}]: {}",
+                        cache.getName(), key, ex.toString());
+            }
+
+            @Override
+            public void handleCacheEvictError(RuntimeException ex, Cache cache, Object key) {
+                log.warn("Cache EVICT skipped [cache={}, key={}]: {}",
+                        cache.getName(), key, ex.toString());
+            }
+
+            @Override
+            public void handleCacheClearError(RuntimeException ex, Cache cache) {
+                log.warn("Cache CLEAR skipped [cache={}]: {}", cache.getName(), ex.toString());
+            }
+        };
+    }
 
     /**
      * Routing DataSource - the primary datasource for the application

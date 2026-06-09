@@ -6,6 +6,7 @@ import ai.nubase.auth.dto.response.platform.PlatformAuthResponse;
 import ai.nubase.auth.dto.response.platform.PlatformUserPayload;
 import ai.nubase.auth.exception.EmailAlreadyExistsException;
 import ai.nubase.auth.service.PlatformAuthService;
+import ai.nubase.auth.service.PlatformOAuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,14 +30,21 @@ import java.util.UUID;
 public class PlatformAuthController {
 
     private final PlatformAuthService platformAuthService;
+    private final PlatformOAuthService platformOAuthService;
 
     /**
      * GET /auth/v1/platform/config — public config the Studio frontend needs to render the
-     * login/signup page correctly. No auth required.
+     * login/signup page correctly (incl. which OAuth providers are enabled). No auth required.
      */
     @GetMapping("/config")
     public ResponseEntity<?> publicConfig() {
-        return ResponseEntity.ok(Map.of("signup_enabled", platformAuthService.isSignupEnabled()));
+        return ResponseEntity.ok(Map.of(
+                "signup_enabled", platformAuthService.isSignupEnabled(),
+                "google_enabled", platformOAuthService.googleEnabled(),
+                "google_code_enabled", platformOAuthService.googleCodeEnabled(),
+                "github_enabled", platformOAuthService.githubEnabled(),
+                "google_client_id", platformOAuthService.googleClientId()
+        ));
     }
 
     @PostMapping("/signup")

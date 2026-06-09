@@ -141,6 +141,46 @@ public class PlatformAuthService {
         return buildResponse(user);
     }
 
+    /**
+     * Find-or-create a platform user from a verified OAuth/One-Tap identity (email) and issue a
+     * platform JWT. OAuth accounts store a random password hash (never used to sign in by password).
+     */
+    @Transactional("metadataTransactionManager")
+    public PlatformAuthResponse oauthSignIn(String rawEmail, String fullName) {
+        String email = rawEmail == null ? null : rawEmail.trim().toLowerCase();
+        if (email == null || email.isEmpty()) {
+            throw new IllegalArgumentException("OAuth identity has no email address");
+        }
+        Optional<PlatformUser> maybe = platformUserRepository.findByEmailIgnoreCase(email);
+        PlatformUser user;
+        if (maybe.isPresent()) {
+            user = maybe.get();
+            if (!Boolean.TRUE.equals(user.getIsActive())) {
+                throw new IllegalArgumentException("Account is disabled");
+            }
+            if ((user.getFullName() == null || user.getFullName().isBlank())
+                    && fullName != null && !fullName.isBlank()) {
+                user.setFullName(fullName.trim());
+            }
+        } else {
+            long existing = platformUserRepository.count();
+            if (!signupEnabled && existing > 0L) {
+                throw new IllegalStateException("Public sign-ups are disabled on this workspace.");
+            }
+            String role = existing == 0L ? PLATFORM_ROLE_SUPER_ADMIN : PLATFORM_ROLE_USER;
+            user = PlatformUser.builder()
+                    .email(email)
+                    .encryptedPassword(passwordService.hashPassword(UUID.randomUUID().toString()))
+                    .fullName(fullName == null ? null : fullName.trim())
+                    .role(role)
+                    .isActive(Boolean.TRUE)
+                    .build();
+        }
+        user.setLastSignedInAt(Instant.now());
+        PlatformUser saved = platformUserRepository.save(user);
+        return buildResponse(saved);
+    }
+
     public PlatformUserPayload describe(UUID id) {
         PlatformUser user = platformUserRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Platform user not found"));

@@ -155,6 +155,24 @@ nubase:
       domain: localhost:9999
       scheme: http
 
+  # Platform (Studio developer account) configuration.
+  platform:
+    # Third-party sign-in for Studio accounts. Each provider auto-hides on the
+    # login page / homepage unless its credentials are set here. Leave blank to disable.
+    oauth:
+      # Public origin used to build OAuth redirect/callback URLs (e.g. https://nubase.ai).
+      # Leave blank to derive it from the incoming request's X-Forwarded-Proto/Host.
+      site-url: ${NUBASE_PLATFORM_OAUTH_SITE_URL:}
+      google:
+        # Google Identity Services client id (used for the GIS button and One Tap).
+        client-id: ${NUBASE_PLATFORM_OAUTH_GOOGLE_CLIENT_ID:}
+        # Optional: set the secret to also enable the GitHub-style authorization-code
+        # redirect login ("Continue with Google"). One Tap / GIS work without it.
+        client-secret: ${NUBASE_PLATFORM_OAUTH_GOOGLE_CLIENT_SECRET:}
+      github:
+        client-id: ${NUBASE_PLATFORM_OAUTH_GITHUB_CLIENT_ID:}
+        client-secret: ${NUBASE_PLATFORM_OAUTH_GITHUB_CLIENT_SECRET:}
+
 
   # Storage configuration
   storage:
