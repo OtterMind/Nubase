@@ -217,6 +217,29 @@ nubase:
   ai-gateway:
     enabled: true
 
+  # Edge Functions module. Spring remains the public /functions/v1 gateway; the
+  # executor can be swapped from local HTTP to Cloudflare Workers for Platforms.
+  functions:
+    enabled: ${NUBASE_FUNCTIONS_ENABLED:true}
+    executor:
+      provider: ${NUBASE_FUNCTIONS_EXECUTOR_PROVIDER:local}
+      timeout-ms: ${NUBASE_FUNCTIONS_EXECUTOR_TIMEOUT_MS:30000}
+      max-request-bytes: ${NUBASE_FUNCTIONS_MAX_REQUEST_BYTES:10485760}
+      max-response-bytes: ${NUBASE_FUNCTIONS_MAX_RESPONSE_BYTES:10485760}
+      per-project-rpm: ${NUBASE_FUNCTIONS_PER_PROJECT_RPM:600}
+      per-function-rpm: ${NUBASE_FUNCTIONS_PER_FUNCTION_RPM:120}
+      invocation-log-retention-days: ${NUBASE_FUNCTIONS_INVOCATION_LOG_RETENTION_DAYS:30}
+      invocation-log-retention-scan-ms: ${NUBASE_FUNCTIONS_INVOCATION_LOG_RETENTION_SCAN_MS:3600000}
+      local:
+        base-url: ${NUBASE_FUNCTIONS_LOCAL_BASE_URL:http://localhost:8787}
+      cloudflare:
+        api-base-url: ${CLOUDFLARE_API_BASE_URL:https://api.cloudflare.com/client/v4}
+        account-id: ${CLOUDFLARE_ACCOUNT_ID:}
+        api-token: ${CLOUDFLARE_API_TOKEN:}
+        dispatch-namespace: ${CLOUDFLARE_WORKERS_DISPATCH_NAMESPACE:}
+        dispatcher-url: ${NUBASE_FUNCTIONS_CLOUDFLARE_DISPATCHER_URL:}
+        dispatcher-secret: ${NUBASE_FUNCTIONS_CLOUDFLARE_DISPATCHER_SECRET:}
+
   # AI memory module configuration
   mem:
     enabled: true
@@ -310,4 +333,3 @@ pgrst:
     # Per-tenant connection pool defaults
     pool-defaults:
       maximum-pool-size: ${PGRST_DEFAULT_POOL_SIZE:10}
-

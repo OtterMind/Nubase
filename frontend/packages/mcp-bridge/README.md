@@ -218,7 +218,25 @@ Backend ops (write, gated by `NUBASE_ALLOW_ADMIN_WRITE`):
 - `auth_create_user` / `auth_delete_user`
 - `gateway_issue_key` / `gateway_revoke_key`
 
-> Note: Nubase has no serverless/edge-function runtime, so there are no function-deploy tools.
+## Edge Functions CLI
+
+Create, deploy, and invoke project functions:
+
+```bash
+nubase_cli functions new hello
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions deploy hello
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions deploy hello --bundle
+nubase_cli functions invoke hello --method POST --body '{"ok":true}'
+nubase_cli functions logs hello --limit 50
+nubase_cli functions secrets list hello
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions secrets set hello API_KEY=value
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions delete hello
+```
+
+Function source is scaffolded under `nubase/functions/<name>`. Deploy packages that directory and sends it to `/functions/admin/v1`.
+The default scaffold uses `index.js` so it can be uploaded directly to Cloudflare Workers for Platforms without a TypeScript build step.
+Use `--bundle` to compile an `index.ts`/`index.js` entrypoint and its import graph into a single Worker module with esbuild.
+Function secrets are set by name and only secret names are returned by list commands.
 
 ## Publish
 

@@ -17,7 +17,7 @@ import javax.sql.DataSource;
  */
 @Configuration
 @EnableJpaRepositories(
-        basePackages = {"ai.nubase.metadata.repository"},
+        basePackages = {"ai.nubase.metadata"},
         entityManagerFactoryRef = "metadataEntityManagerFactory",
         transactionManagerRef = "metadataTransactionManager"
 )
@@ -29,7 +29,7 @@ public class MetadataJpaConfig {
             @Qualifier("metadataDataSource") DataSource metadataDataSource) {
         return builder
                 .dataSource(metadataDataSource)
-                .packages("ai.nubase.metadata.entity")
+                .packages("ai.nubase.metadata")
                 .persistenceUnit("metadata")
                 .build();
     }

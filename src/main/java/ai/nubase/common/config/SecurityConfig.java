@@ -62,6 +62,8 @@ public class SecurityConfig {
                         .requestMatchers("/openai/**").permitAll()
                         // AI Gateway CONTROL PLANE (tenant resolved by UnifiedMultiTenancyFilter; @RequireServiceRole enforces role)
                         .requestMatchers("/ai-gateway/**").permitAll()
+                        // Edge Functions (tenant resolved by UnifiedMultiTenancyFilter; admin endpoints use @RequireServiceRole)
+                        .requestMatchers("/functions/v1/**", "/functions/admin/v1/**").permitAll()
                         // Memory service endpoints — authentication flow:
                         //   1. UnifiedMultiTenancyFilter validates the apikey and sets MultiTenancyContext
                         //   2. authenticateUser validates the Bearer token and writes to SecurityContextHolder

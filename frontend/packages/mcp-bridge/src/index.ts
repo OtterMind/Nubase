@@ -3,6 +3,7 @@ import { defaultConfigPath } from './auth-config.js';
 import { authorize, parseAuthorizeArgs } from './authorize.js';
 import { loadConfigAsync } from './config.js';
 import { installSkills, parseInstallArgs } from './install-skills.js';
+import { runFunctionsCommand } from './functions.js';
 import { McpStdioServer } from './mcp-stdio.js';
 import { NubaseClient } from './nubase-client.js';
 import { callTool, TOOLS } from './tools.js';
@@ -46,6 +47,12 @@ if (process.argv[2] === 'authorize') {
 
 const config = await loadConfigAsync();
 const client = new NubaseClient(config);
+
+if (process.argv[2] === 'functions') {
+  const result = await runFunctionsCommand(process.argv.slice(3), config, client);
+  console.log(JSON.stringify(result, null, 2));
+  process.exit(0);
+}
 
 const server = new McpStdioServer(async (request) => {
   switch (request.method) {

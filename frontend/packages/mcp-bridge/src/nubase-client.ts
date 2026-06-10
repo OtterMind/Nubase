@@ -195,6 +195,88 @@ export class NubaseClient {
     return this.request(`/ai-gateway/admin/v1/usage/overview${query}`);
   }
 
+  // --- Edge Functions control plane (/functions/admin/v1) ----------------
+
+  functionsList() {
+    return this.request('/functions/admin/v1/functions');
+  }
+
+  functionsCreate(args: Record<string, unknown>) {
+    const name = requiredString(args.name, 'name');
+    return this.guardedWrite('create edge function', () =>
+      this.request('/functions/admin/v1/functions', {
+        method: 'POST',
+        body: {
+          name,
+          slug: typeof args.slug === 'string' ? args.slug : undefined,
+          description: typeof args.description === 'string' ? args.description : undefined,
+          verifyJwt: args.verifyJwt,
+          enabled: args.enabled,
+          privileged: args.privileged,
+          entrypoint: typeof args.entrypoint === 'string' ? args.entrypoint : undefined,
+        },
+      })
+    );
+  }
+
+  functionsDeploy(args: Record<string, unknown>) {
+    const slug = requiredString(args.slug, 'slug');
+    const sourceHash = requiredString(args.sourceHash, 'sourceHash');
+    return this.guardedWrite('deploy edge function', () =>
+      this.request(`/functions/admin/v1/functions/${encodeURIComponent(slug)}/deploy`, {
+        method: 'POST',
+        body: {
+          sourceHash,
+          artifactUri: typeof args.artifactUri === 'string' ? args.artifactUri : undefined,
+          artifactType: typeof args.artifactType === 'string' ? args.artifactType : 'source_bundle',
+          sourceBundleBase64: typeof args.sourceBundleBase64 === 'string' ? args.sourceBundleBase64 : undefined,
+        },
+      })
+    );
+  }
+
+  functionsDelete(args: Record<string, unknown>) {
+    const slug = requiredString(args.slug, 'slug');
+    return this.guardedWrite('delete edge function', () =>
+      this.request(`/functions/admin/v1/functions/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+    );
+  }
+
+  functionsLogs(args: Record<string, unknown>) {
+    const query = buildQuery({ function: args.slug, limit: args.limit });
+    return this.request(`/functions/admin/v1/invocations${query}`);
+  }
+
+  functionsListSecrets(args: Record<string, unknown>) {
+    const slug = requiredString(args.slug, 'slug');
+    return this.request(`/functions/admin/v1/functions/${encodeURIComponent(slug)}/secrets`);
+  }
+
+  functionsSetSecrets(args: Record<string, unknown>) {
+    const slug = requiredString(args.slug, 'slug');
+    const secrets = args.secrets;
+    if (!secrets || typeof secrets !== 'object' || Array.isArray(secrets)) {
+      throw new Error('secrets object is required');
+    }
+    return this.guardedWrite('set edge function secrets', () =>
+      this.request(`/functions/admin/v1/functions/${encodeURIComponent(slug)}/secrets`, {
+        method: 'POST',
+        body: { secrets },
+      })
+    );
+  }
+
+  functionsInvoke(args: Record<string, unknown>) {
+    const slug = requiredString(args.slug, 'slug');
+    const method = typeof args.method === 'string' ? args.method.toUpperCase() : 'GET';
+    const path = typeof args.path === 'string' && args.path ? `/${args.path.replace(/^\/+/, '')}` : '';
+    return this.rawRequest(`/functions/v1/${encodeURIComponent(slug)}${path}`, {
+      method,
+      body: typeof args.body === 'string' ? args.body : undefined,
+      contentType: typeof args.contentType === 'string' ? args.contentType : 'application/json',
+    });
+  }
+
   // --- Project API keys ---------------------------------------------------
   // The two project keys an app needs: the anon/authenticated key for browser
   // and client code, and the service_role key for trusted server-side code.
@@ -338,27 +420,36 @@ values (${sqlLiteral(entry.risk)}, ${entry.statementCount}, ${sqlLiteral(entry.s
   }
 
   private async request(path: string, options: { method?: string; body?: unknown } = {}) {
+    const { data } = await this.rawRequest(path, {
+      method: options.method,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      contentType: 'application/json',
+    });
+    return data;
+  }
+
+  private async rawRequest(path: string, options: { method?: string; body?: string; contentType?: string } = {}) {
     if (!this.config.projectKey) {
       throw new Error('Missing NUBASE_PROJECT_KEY or NUBASE_API_KEY.');
     }
     const headers: Record<string, string> = {
       apikey: this.config.projectKey,
-      'Content-Type': 'application/json',
     };
+    if (options.contentType) headers['Content-Type'] = options.contentType;
     if (this.config.userJwt) {
       headers.Authorization = `Bearer ${this.config.userJwt}`;
     }
     const response = await fetch(`${this.config.nubaseUrl}${path}`, {
       method: options.method || 'GET',
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.body,
     });
     const text = await response.text();
     const data = parseResponse(text);
     if (!response.ok) {
       throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
     }
-    return data;
+    return { status: response.status, headers: Object.fromEntries(response.headers.entries()), data };
   }
 }
 

@@ -1,0 +1,10 @@
+name = "nubase-functions-dispatcher"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+dispatch_namespaces = [
+  { binding = "NUBASE_DISPATCH", namespace = "nubase-functions" }
+]
+
+# Configure this as a secret, not plaintext:
+# wrangler secret put NUBASE_DISPATCHER_SECRET

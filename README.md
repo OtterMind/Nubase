@@ -125,7 +125,7 @@ Supabase is excellent, but its open-source self-hosted stack is designed around 
 | Storage | Yes | Yes | S3/R2-compatible |
 | AI memory | Not a core primitive | Not a core primitive | **Built-in Memory pillar** |
 | AI coding backend target | General primitives | General primitives | **Memory + REST + MCP + Studio** |
-| Realtime / Edge Functions | Yes | Available in stack | Not yet |
+| Realtime / Edge Functions | Yes | Available in stack | Edge Functions initial gateway; Realtime not yet |
 
 </details>
 
@@ -197,7 +197,7 @@ curl -X POST "http://localhost:9999/rest/v1/todos" \
 
 ## Status & roadmap
 
-Nubase is early-stage but the core pillars (Memory, Database, Auth, Storage, AI Gateway, Studio, MCP) are in place. Not yet implemented: **Realtime**, **Edge Functions**, and operational extras like backups/PITR, HA, and enterprise SSO/SCIM. Review the admin/management endpoints before exposing a server to the public internet.
+Nubase is early-stage but the core pillars (Memory, Database, Auth, Storage, AI Gateway, Edge Functions gateway, Studio, MCP) are in place. Not yet implemented: **Realtime** and operational extras like backups/PITR, HA, and enterprise SSO/SCIM. Review the admin/management endpoints before exposing a server to the public internet.
 
 ## Contributing
 

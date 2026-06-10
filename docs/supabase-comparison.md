@@ -34,7 +34,7 @@ https://supabase.com/docs
 | Auth | GoTrue | GoTrue | Supabase-style Auth implemented in Java |
 | Storage | Supabase Storage | Supabase Storage | S3/R2-compatible storage service |
 | Realtime | Yes | Yes in Supabase stack | Not implemented yet |
-| Edge Functions | Yes | Yes in Supabase stack | Not implemented yet |
+| Edge Functions | Yes | Yes in Supabase stack | Initial Spring gateway + pluggable executor |
 | AI memory | Not a core product primitive | Not a core product primitive | Built-in Memory pillar |
 | AI Coding workflow | General backend platform | General backend stack | REST + Memory + MCP tools + Studio |
 | Implementation | Supabase services | Supabase Docker stack | Spring Boot backend + Next.js Studio |
@@ -97,7 +97,7 @@ Nubase runs as a Spring Boot application. This may be useful for teams that pref
 Supabase is more mature in:
 
 - Realtime
-- Edge Functions
+- Edge Functions runtime parity
 - managed backups
 - PITR
 - branching

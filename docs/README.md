@@ -21,6 +21,7 @@ The project is Supabase-inspired, but it is built around two core differences:
 - [Supabase comparison](supabase-comparison.md)
 - [Getting started](getting-started.md)
 - [Architecture](architecture.md)
+- [Edge Functions](edge-functions.md)
 - [MCP and agent guide](mcp.md)
 - [Connect agents](agent-connect.md)
 - [Documentation plan](documentation-plan.md)
@@ -36,13 +37,13 @@ Implemented or partially implemented:
 - PostgREST-compatible REST API
 - S3/R2-compatible Storage
 - AI Memory API
+- Edge Functions initial gateway and executor provider
 - SQL editor and SQL history
 - Database and Memory MCP tools
 
 Not implemented yet:
 
 - Realtime
-- Edge Functions
 - Managed backups and PITR
 - Production-grade HA orchestration
 - Billing
