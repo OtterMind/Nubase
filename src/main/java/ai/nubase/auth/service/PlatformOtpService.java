@@ -46,15 +46,11 @@ public class PlatformOtpService {
         rateLimiter.checkRate("platform_otp:" + storageKey, email);
 
         String code = tokenGenerator.generateNumericOTP(codeLength);
-        // Upsert: reuse the existing pending row for this (email, purpose) so re-issuing a code is an
-        // UPDATE, not delete+insert. The latter would hit the (email, purpose) unique constraint because
-        // Hibernate flushes INSERTs before DELETEs within a transaction.
-        PlatformOneTimeToken token = tokenRepository
-                .findByEmailIgnoreCaseAndPurpose(email, storageKey)
-                .orElseGet(() -> PlatformOneTimeToken.builder().email(email).purpose(storageKey).build());
-        token.setTokenHash(tokenGenerator.sha256(code));
-        token.setExpiresAt(Instant.now().plusSeconds(expirationSeconds));
-        tokenRepository.save(token);
+        // Atomic upsert on the (email, purpose) unique key: replaces any pending code in one statement,
+        // so two concurrent issue() calls (e.g. double-clicked "resend") can't race into a constraint
+        // violation, and there's no Hibernate insert-before-delete flush-ordering hazard.
+        tokenRepository.upsert(email, storageKey,
+                tokenGenerator.sha256(code), Instant.now().plusSeconds(expirationSeconds));
 
         emailService.sendOtp(email, code, purpose, expirationSeconds);
     }

@@ -132,6 +132,17 @@ public class PlatformOAuthService {
         if (!"true".equalsIgnoreCase(str(info.get("email_verified")))) {
             throw new IllegalArgumentException("Google email is not verified");
         }
+        // Defence-in-depth: tokeninfo already rejects expired tokens, but check exp locally too.
+        String expStr = str(info.get("exp"));
+        if (expStr != null && !expStr.isBlank()) {
+            try {
+                if (Long.parseLong(expStr.trim()) < System.currentTimeMillis() / 1000L) {
+                    throw new IllegalArgumentException("Google credential has expired");
+                }
+            } catch (NumberFormatException ignore) {
+                // non-numeric exp — rely on tokeninfo's own expiry rejection
+            }
+        }
         return platformAuthService.oauthSignIn(str(info.get("email")), str(info.get("name")));
     }
 
@@ -175,18 +186,28 @@ public class PlatformOAuthService {
         if (name == null || name.isBlank()) {
             name = user == null ? null : str(user.get("login"));
         }
-        String email = user == null ? null : str(user.get("email"));
-        if (email == null || email.isBlank()) {
-            List emails = http.exchange("https://api.github.com/user/emails", HttpMethod.GET,
-                    new HttpEntity<>(uh), List.class).getBody();
-            if (emails != null) {
-                for (Object o : emails) {
-                    Map m = (Map) o;
-                    if (Boolean.TRUE.equals(m.get("primary")) && Boolean.TRUE.equals(m.get("verified"))) {
-                        email = str(m.get("email"));
-                        break;
-                    }
+        // Always resolve a VERIFIED email from /user/emails — never trust the public profile email,
+        // which can be an unverified address. oauthSignIn relies on the email being provider-verified.
+        String email = null;
+        List emails = http.exchange("https://api.github.com/user/emails", HttpMethod.GET,
+                new HttpEntity<>(uh), List.class).getBody();
+        if (emails != null) {
+            String firstVerified = null;
+            for (Object o : emails) {
+                Map m = (Map) o;
+                if (!Boolean.TRUE.equals(m.get("verified"))) {
+                    continue;
                 }
+                if (Boolean.TRUE.equals(m.get("primary"))) {
+                    email = str(m.get("email"));
+                    break;
+                }
+                if (firstVerified == null) {
+                    firstVerified = str(m.get("email"));
+                }
+            }
+            if (email == null) {
+                email = firstVerified;
             }
         }
         if (email == null || email.isBlank()) {

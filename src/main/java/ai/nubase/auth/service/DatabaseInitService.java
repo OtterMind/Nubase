@@ -386,9 +386,9 @@ public class DatabaseInitService {
             return configResponse;
         }
 
-        // Phase two: initialize the physical database
-        initializePhysicalDatabase(request.getDbKey());
-        return configResponse;
+        // Phase two: initialize the physical database. Return its terminal result — phase one now
+        // returns a non-terminal "pending_init" status, so returning it would mask a phase-two failure.
+        return initializePhysicalDatabase(request.getDbKey());
     }
 
     /**

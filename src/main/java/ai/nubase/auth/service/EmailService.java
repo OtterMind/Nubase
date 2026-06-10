@@ -12,6 +12,8 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -186,14 +188,19 @@ public class EmailService {
         return authConfig.getApp().getDomain(MultiTenancyContext.getAppCode());
     }
 
+    /** URL-encode a query-parameter value so emails/tokens with &, +, spaces, # don't corrupt the link. */
+    private static String enc(String v) {
+        return v == null ? "" : URLEncoder.encode(v, StandardCharsets.UTF_8);
+    }
+
     /**
      * Send confirmation email
      */
     public void sendConfirmationEmail(User user, String token, String redirectTo) {
-        String confirmUrl = baseDomain() + "/auth/v1/verify?token=" + token + "&type=signup&email="
-                + user.getEmail() + "&apikey=" + MultiTenancyContext.getContext().getApikey();
+        String confirmUrl = baseDomain() + "/auth/v1/verify?token=" + enc(token) + "&type=signup&email="
+                + enc(user.getEmail()) + "&apikey=" + enc(MultiTenancyContext.getContext().getApikey());
         if (StringUtils.isNotBlank(redirectTo)) {
-            confirmUrl += "&redirect_to=" + redirectTo;
+            confirmUrl += "&redirect_to=" + enc(redirectTo);
         }
         Map<String, String> vars = new HashMap<>();
         vars.put("ConfirmationURL", confirmUrl);
@@ -206,7 +213,7 @@ public class EmailService {
      * Send password recovery email
      */
     public void sendRecoveryEmail(User user, String token) {
-        String resetUrl = baseDomain() + "/auth/v1/verify?token=" + token + "&type=recovery&email=" + user.getEmail();
+        String resetUrl = baseDomain() + "/auth/v1/verify?token=" + enc(token) + "&type=recovery&email=" + enc(user.getEmail());
         Map<String, String> vars = new HashMap<>();
         vars.put("ConfirmationURL", resetUrl);
         vars.put("Email", user.getEmail());
@@ -218,7 +225,7 @@ public class EmailService {
      * Send email change confirmation
      */
     public void sendEmailChangeConfirmation(User user, String newEmail, String token) {
-        String confirmUrl = baseDomain() + "/auth/v1/verify?token=" + token + "&type=email_change&email=" + newEmail;
+        String confirmUrl = baseDomain() + "/auth/v1/verify?token=" + enc(token) + "&type=email_change&email=" + enc(newEmail);
         Map<String, String> vars = new HashMap<>();
         vars.put("ConfirmationURL", confirmUrl);
         vars.put("Email", user.getEmail());
@@ -232,10 +239,10 @@ public class EmailService {
      * establishes a session; the email also shows the numeric OTP code as a fallback.
      */
     public void sendMagicLinkEmail(User user, String token, String otpCode, String redirectTo) {
-        String link = baseDomain() + "/auth/v1/verify?token=" + token + "&type=magiclink&email="
-                + user.getEmail() + "&apikey=" + MultiTenancyContext.getContext().getApikey();
+        String link = baseDomain() + "/auth/v1/verify?token=" + enc(token) + "&type=magiclink&email="
+                + enc(user.getEmail()) + "&apikey=" + enc(MultiTenancyContext.getContext().getApikey());
         if (StringUtils.isNotBlank(redirectTo)) {
-            link += "&redirect_to=" + redirectTo;
+            link += "&redirect_to=" + enc(redirectTo);
         }
         Map<String, String> vars = new HashMap<>();
         vars.put("ConfirmationURL", link);
@@ -273,10 +280,10 @@ public class EmailService {
     public void sendInvitationEmail(User user, String token, String redirectTo) {
         // Must hit the /auth/v1/verify endpoint (like confirmation/recovery) — not the bare domain,
         // which just lands on the marketing homepage and can't accept the invite.
-        String inviteUrl = baseDomain() + "/auth/v1/verify?token=" + token + "&type=invite&email="
-                + user.getEmail() + "&apikey=" + MultiTenancyContext.getContext().getApikey();
+        String inviteUrl = baseDomain() + "/auth/v1/verify?token=" + enc(token) + "&type=invite&email="
+                + enc(user.getEmail()) + "&apikey=" + enc(MultiTenancyContext.getContext().getApikey());
         if (StringUtils.isNotBlank(redirectTo)) {
-            inviteUrl += "&redirect_to=" + redirectTo;
+            inviteUrl += "&redirect_to=" + enc(redirectTo);
         }
         Map<String, String> vars = new HashMap<>();
         vars.put("ConfirmationURL", inviteUrl);

@@ -384,9 +384,11 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Resolves a valid appCode from the domain or the Referer.
-     * Tries domain extraction first and verifies the DatabaseConfig exists; if not, falls
-     * back to extracting from the Referer.
+     * Resolves a valid appCode from the request's own Host/subdomain only.
+     *
+     * <p>Deliberately does NOT fall back to the {@code Referer} header: Referer is attacker-controllable,
+     * so resolving the tenant from it would let a malicious page select which tenant's context these
+     * apikey-free endpoints (OAuth callback, public storage, SSO) run against.
      */
     private String resolveAppCodeFromDomainOrReferer(HttpServletRequest request) {
         String appCode = extractAppCodeFromDomain(request);
@@ -395,34 +397,7 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
             if (config != null) {
                 return appCode;
             }
-            log.debug("Domain appCode '{}' not found in database, trying Referer", appCode);
-        }
-        return extractAppCodeFromReferer(request);
-    }
-
-    /**
-     * Extracts app_code (subdomain) from the URL in the Referer header.
-     * For example: Referer: https://my-app.preview.example.com/ -> my-app
-     */
-    private String extractAppCodeFromReferer(HttpServletRequest request) {
-        String referer = request.getHeader("Referer");
-        if (StringUtils.isBlank(referer)) {
-            return null;
-        }
-        try {
-            URI uri = URI.create(referer);
-            String host = uri.getHost();
-            if (StringUtils.isBlank(host)) {
-                return null;
-            }
-            int firstDot = host.indexOf('.');
-            if (firstDot > 0) {
-                String appCode = host.substring(0, firstDot);
-                log.debug("Extracted app_code from Referer: {} -> {}", referer, appCode);
-                return appCode;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to parse Referer header: {}", referer, e);
+            log.debug("Domain appCode '{}' not found in database", appCode);
         }
         return null;
     }

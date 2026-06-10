@@ -75,6 +75,25 @@ export default function SettingsPage({ params }: { params: { ref: string } }) {
     loadKeys();
   }, [loadKeys]);
 
+  // Initialise the pause/resume state from the project's real `enabled` flag, otherwise the toggle
+  // starts wrong (always "Pause") and can't resume an already-paused project.
+  useEffect(() => {
+    if (!platformKey || !projectRef) return;
+    let cancelled = false;
+    apiFetch<{ ref: string; enabled: boolean }[]>('/auth/v1/admin/projects', { apikey: platformKey })
+      .then((list) => {
+        if (cancelled) return;
+        const me = list.find((p) => p.ref === projectRef);
+        if (me) setPaused(!me.enabled);
+      })
+      .catch(() => {
+        /* leave the default; the toggle still sends an explicit enabled value */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [platformKey, projectRef]);
+
   async function copy(label: string, value: string) {
     try {
       await navigator.clipboard.writeText(value);
@@ -109,7 +128,7 @@ export default function SettingsPage({ params }: { params: { ref: string } }) {
       setMetaSaved(true);
       setTimeout(() => setMetaSaved(false), 1500);
     } catch (err) {
-      setMetaError((err as ApiError).message ?? 'Update failed.');
+      setMetaError(parseError(err as ApiError) ?? 'Update failed.');
     } finally {
       setSavingMeta(false);
     }
@@ -127,7 +146,7 @@ export default function SettingsPage({ params }: { params: { ref: string } }) {
       });
       setPaused((p) => !p);
     } catch (err) {
-      setActionError((err as ApiError).message ?? 'Action failed.');
+      setActionError(parseError(err as ApiError) ?? 'Action failed.');
     } finally {
       setBusy(null);
     }
@@ -146,7 +165,7 @@ export default function SettingsPage({ params }: { params: { ref: string } }) {
       if (project?.ref === projectRef) setProject(null);
       router.replace('/projects');
     } catch (err) {
-      setActionError((err as ApiError).message ?? 'Delete failed.');
+      setActionError(parseError(err as ApiError) ?? 'Delete failed.');
       setBusy(null);
     }
   }
@@ -303,6 +322,16 @@ export default function SettingsPage({ params }: { params: { ref: string } }) {
       </Card>
     </div>
   );
+}
+
+/** Backend errors are JSON ({ error, message }); unwrap to a readable string instead of raw JSON. */
+function parseError(err: ApiError): string | null {
+  try {
+    const parsed = JSON.parse(err.message);
+    return parsed?.message ?? parsed?.error ?? null;
+  } catch {
+    return err.message;
+  }
 }
 
 function KeyRow({

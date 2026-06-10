@@ -15,12 +15,14 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,6 +46,8 @@ public class PlatformAuthService {
     private final PlatformUserRepository platformUserRepository;
     private final PasswordService passwordService;
     private final PlatformOtpService otpService;
+    private final RateLimiterService rateLimiter;
+    private final Environment environment;
 
     @Value("${nubase.platform.jwt-secret:}")
     private String configuredJwtSecret;
@@ -93,14 +97,19 @@ public class PlatformAuthService {
         }
         byte[] material;
         if (raw == null || raw.isBlank()) {
-            // Dev fallback: no secret configured anywhere. Generate a process-local random
-            // key so the server still boots. JWTs issued in this run will be invalidated
-            // on the next restart — set nubase.platform.jwt-secret or
-            // pgrst.multidb.encryption.master-key for stable sessions across restarts.
-            log.warn("No platform JWT secret configured. Generating a random one for this "
-                    + "process — sign-in sessions will not survive a restart. Set "
-                    + "PGRST_ENCRYPTION_MASTER_KEY (or nubase.platform.jwt-secret) for "
-                    + "production deployments.");
+            boolean dev = Arrays.asList(environment.getActiveProfiles()).contains("dev");
+            if (!dev) {
+                // A per-process random key invalidates sessions on restart and, worse, makes each
+                // replica sign with a different key (tokens only valid on the issuing node). Refuse
+                // to boot like this outside dev.
+                throw new IllegalStateException(
+                        "No platform JWT signing key configured. Set nubase.platform.jwt-secret "
+                        + "(env NUBASE_PLATFORM_JWT_SECRET) or PGRST_ENCRYPTION_MASTER_KEY before "
+                        + "running outside the 'dev' profile.");
+            }
+            // Dev fallback only: generate a process-local random key so the server still boots.
+            log.warn("No platform JWT secret configured (dev). Generating a random per-process key — "
+                    + "sessions will not survive a restart.");
             material = new byte[32];
             new java.security.SecureRandom().nextBytes(material);
         } else {
@@ -171,8 +180,12 @@ public class PlatformAuthService {
     @Transactional("metadataTransactionManager")
     public AuthOutcome signIn(PlatformSignInRequest request) {
         String email = request.getEmail().trim();
+        String rlKey = "platform_login:" + email.toLowerCase();
+        // Throttle online password guessing against Studio accounts (mirrors tenant auth).
+        rateLimiter.assertNotLockedOut(rlKey);
         Optional<PlatformUser> maybe = platformUserRepository.findByEmailIgnoreCase(email);
         if (maybe.isEmpty()) {
+            rateLimiter.recordFailure(rlKey);
             throw new IllegalArgumentException("Invalid email or password");
         }
         PlatformUser user = maybe.get();
@@ -180,8 +193,10 @@ public class PlatformAuthService {
             throw new IllegalArgumentException("Account is disabled");
         }
         if (!passwordService.verifyPassword(request.getPassword(), user.getEncryptedPassword())) {
+            rateLimiter.recordFailure(rlKey);
             throw new IllegalArgumentException("Invalid email or password");
         }
+        rateLimiter.recordSuccess(rlKey);
         // Email verification is a one-time gate: an unverified account must confirm a code before its
         // first session. Once verified (or when the feature is off), login is password-only.
         if (emailVerificationEnabled && user.getEmailVerifiedAt() == null) {

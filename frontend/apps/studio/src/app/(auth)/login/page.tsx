@@ -391,7 +391,10 @@ function LoginContent() {
 }
 
 function safeNext(value: string | null): string | null {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+  if (!value || !value.startsWith('/')) return null;
+  // Block protocol-relative (//evil.com) and backslash tricks (/\evil.com, which browsers
+  // normalise to //evil.com) — both would be open redirects to another origin.
+  if (value[1] === '/' || value[1] === '\\') return null;
   return value;
 }
 

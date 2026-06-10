@@ -51,6 +51,7 @@ public class InitDatabaseRequest {
      * Example: "tenant1", "app-abc"
      */
     @NotBlank(message = "App code is required")
+    @Pattern(regexp = "^[a-zA-Z0-9_-]+$", message = "App code must match pattern [a-zA-Z0-9_-]+")
     private String appCode;
 
     /**

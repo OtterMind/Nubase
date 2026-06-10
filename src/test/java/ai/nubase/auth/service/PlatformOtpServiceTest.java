@@ -50,18 +50,23 @@ class PlatformOtpServiceTest {
         service.issue(EMAIL, Purpose.SIGNUP);
 
         verify(rateLimiter).checkRate(eq("platform_otp:signup"), eq(EMAIL));
-        ArgumentCaptor<PlatformOneTimeToken> saved = ArgumentCaptor.forClass(PlatformOneTimeToken.class);
-        verify(repo).save(saved.capture());
+        // issue() persists via an atomic upsert; capture the emailed code and the stored hash.
         ArgumentCaptor<String> code = ArgumentCaptor.forClass(String.class);
         verify(email).sendOtp(eq(EMAIL), code.capture(), eq(Purpose.SIGNUP), eq(600L));
+        ArgumentCaptor<String> hash = ArgumentCaptor.forClass(String.class);
+        verify(repo).upsert(eq(EMAIL), eq("signup"), hash.capture(), any(Instant.class));
 
         assertThat6Digits(code.getValue());
         // The stored hash is the SHA-256 of the emailed code, never the plaintext.
-        org.assertj.core.api.Assertions.assertThat(saved.getValue().getTokenHash())
+        org.assertj.core.api.Assertions.assertThat(hash.getValue())
                 .isEqualTo(tokenGenerator.sha256(code.getValue()))
                 .isNotEqualTo(code.getValue());
 
-        PlatformOneTimeToken stored = saved.getValue();
+        PlatformOneTimeToken stored = PlatformOneTimeToken.builder()
+                .email(EMAIL).purpose("signup")
+                .tokenHash(hash.getValue())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
         when(repo.findByEmailIgnoreCaseAndPurpose(EMAIL, "signup")).thenReturn(Optional.of(stored));
 
         assertThatCode(() -> service.verify(EMAIL, Purpose.SIGNUP, code.getValue())).doesNotThrowAnyException();

@@ -386,12 +386,19 @@ public class PostgrestController {
      * Set the PostgreSQL database role.
      */
     private void setDatabaseRole(String role) {
+        // The tenant connection runs as the table OWNER (db_user), which bypasses RLS. RLS is only
+        // enforced once we switch to a non-owner role (authenticated/anon/service_role). If that switch
+        // fails we MUST NOT run the query as the owner — fail closed rather than leaking every row.
+        if (role == null || !role.matches("^[a-zA-Z_][a-zA-Z0-9_]*$")) {
+            throw new IllegalStateException("Refusing to set an invalid database role: " + role);
+        }
         try {
-            String sql = String.format("SET LOCAL ROLE %s", quote(role));
-            jdbcTemplate.execute(sql);
+            jdbcTemplate.execute(String.format("SET LOCAL ROLE %s", quote(role)));
             log.debug("Set database role to: {}", role);
         } catch (Exception e) {
-            log.warn("Failed to set database role {}: {}", role, e.getMessage());
+            log.error("Failed to set database role {} — aborting request to avoid an RLS bypass: {}",
+                    role, e.getMessage());
+            throw new IllegalStateException("Could not establish the database role for this request", e);
         }
     }
 

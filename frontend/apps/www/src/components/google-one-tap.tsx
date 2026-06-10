@@ -133,7 +133,8 @@ export function GoogleOneTap() {
               const frag =
                 `#access_token=${encodeURIComponent(auth.access_token)}` +
                 `&token_type=Bearer&expires_in=${auth.expires_in ?? 0}`;
-              window.location.assign(`/studio/login${frag}`);
+              // replace() — not assign() — so the bearer token isn't left in this origin's history.
+              window.location.replace(`/studio/login${frag}`);
             })
             .catch(() => {
               /* Verification failed — leave the page untouched. */

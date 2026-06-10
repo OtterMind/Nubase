@@ -1,6 +1,7 @@
 package ai.nubase.common.multitenancy;
 
 import ai.nubase.auth.service.PlatformAuthService;
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,12 +12,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Arrays;
 
 /**
  * Dedicated authentication filter for admin initialization endpoints.
@@ -40,8 +45,14 @@ import java.io.IOException;
 @Order(1) // Executes before UnifiedMultiTenancyFilter
 public class AdminInitAuthFilter extends OncePerRequestFilter {
 
+    /** The default placeholder shipped in application.yml — must never be the live value in prod. */
+    private static final String PLACEHOLDER_KEY = "replace-me-with-a-real-jwt-signed-by-master-key";
+
     @Value("${pgrst.multidb.metadata.service-role-key}")
     private String metadataServiceRoleKey;
+
+    @Autowired
+    private Environment environment;
 
     /**
      * Lazy injection avoids a startup cycle (PlatformAuthService depends on the JPA stack,
@@ -50,6 +61,36 @@ public class AdminInitAuthFilter extends OncePerRequestFilter {
     @Autowired
     @Lazy
     private PlatformAuthService platformAuthService;
+
+    /**
+     * Refuse to boot outside the {@code dev} profile when the metadata service-role key is missing or
+     * still the public placeholder. The key is accepted as a plain bearer for the cross-tenant admin
+     * endpoints, so a known default value would grant any caller super-admin access.
+     */
+    @PostConstruct
+    void validateConfiguredKey() {
+        boolean dev = Arrays.asList(environment.getActiveProfiles()).contains("dev");
+        if (dev) {
+            return;
+        }
+        if (StringUtils.isBlank(metadataServiceRoleKey) || PLACEHOLDER_KEY.equals(metadataServiceRoleKey)) {
+            throw new IllegalStateException(
+                    "METADATA_SERVICE_ROLE_KEY is unset or still the placeholder. Set a strong, secret "
+                    + "value before running outside the 'dev' profile — the default is publicly known and "
+                    + "would grant cross-tenant admin access to anyone.");
+        }
+    }
+
+    /** Constant-time comparison so the metadata key can't be recovered via timing. */
+    private boolean keyMatches(String candidate) {
+        if (candidate == null || StringUtils.isBlank(metadataServiceRoleKey)
+                || PLACEHOLDER_KEY.equals(metadataServiceRoleKey)) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                metadataServiceRoleKey.getBytes(StandardCharsets.UTF_8),
+                candidate.getBytes(StandardCharsets.UTF_8));
+    }
 
     /** Paths where a platform-user JWT is accepted in addition to the metadata service-role key. */
     private static final java.util.List<String> PLATFORM_JWT_ACCEPTED_PATHS = java.util.List.of(
@@ -125,7 +166,7 @@ public class AdminInitAuthFilter extends OncePerRequestFilter {
                     log.debug("Platform JWT validation failed, falling back to service-role-key match: {}", jwtFailure.getMessage());
                 }
             }
-            if (!accepted && metadataServiceRoleKey.equals(authToken)) {
+            if (!accepted && keyMatches(authToken)) {
                 accepted = true;
             }
             if (!accepted) {
