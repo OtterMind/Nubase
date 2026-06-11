@@ -24,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import static ai.nubase.functions.service.EdgeFunctionExceptions.EdgeFunctionException;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,6 +52,8 @@ class EdgeFunctionAdminServiceTest {
     @Mock
     private EdgeFunctionExecutorRouter executor;
     @Mock
+    private EdgeFunctionDeploymentRecorder deploymentRecorder;
+    @Mock
     private EncryptionService encryptionService;
     @Mock
     private EdgeFunctionSecretEnv secretEnv;
@@ -61,7 +64,7 @@ class EdgeFunctionAdminServiceTest {
     void setUp() {
         service = new EdgeFunctionAdminService(
                 functionRepository, versionRepository, secretRepository, invocationRepository,
-                executor, encryptionService, secretEnv);
+                executor, deploymentRecorder, encryptionService, secretEnv);
         MultiTenancyContext.setContext(MultiTenancyContext.ContextData.builder().appCode("app1").build());
         lenient().when(secretRepository.findByFunctionOrderByNameAsc(any())).thenReturn(List.of());
     }
@@ -116,10 +119,9 @@ class EdgeFunctionAdminServiceTest {
         EdgeFunction fn = function(null);
         fn.setEntrypoint("main.js");
         when(functionRepository.findByProjectRefAndSlug("app1", "hello")).thenReturn(Optional.of(fn));
-        when(versionRepository.findFirstByFunctionOrderByVersionNoDesc(fn)).thenReturn(Optional.empty());
         when(secretEnv.decryptedEnv(fn)).thenReturn(Map.of("API_KEY", "v1"));
         when(executor.deploy(any())).thenReturn(EdgeFunctionDeploymentResponse.failed("local", "boom"));
-        when(versionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(deploymentRecorder.record(eq(fn.getId()), any(), any())).thenReturn(deployedVersion());
 
         service.deploy("hello", new DeployFunctionRequest("hash", null, null, "bundle"));
 
@@ -127,10 +129,12 @@ class EdgeFunctionAdminServiceTest {
         verify(executor).deploy(captor.capture());
         assertThat(captor.getValue().entrypoint()).isEqualTo("main.js");
         assertThat(captor.getValue().env()).containsEntry("API_KEY", "v1");
+        verify(deploymentRecorder).record(eq(fn.getId()), any(), any());
     }
 
     private EdgeFunction function(EdgeFunctionVersion activeVersion) {
         return EdgeFunction.builder()
+                .id(UUID.randomUUID())
                 .projectRef("app1")
                 .slug("hello")
                 .name("hello")

@@ -39,8 +39,8 @@ public class ScheduledJobStore {
     }
 
     @Transactional("metadataTransactionManager")
-    public void complete(UUID jobId, String status, Instant nextRunAt) {
-        jobRepository.complete(jobId, status, nextRunAt);
+    public boolean complete(UUID jobId, Instant expectedNextRunAt, String status, Instant nextRunAt) {
+        return jobRepository.complete(jobId, expectedNextRunAt, status, nextRunAt) == 1;
     }
 
     // REQUIRES_NEW for symmetry with the functions invocation log: the run row must

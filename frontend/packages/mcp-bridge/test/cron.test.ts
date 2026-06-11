@@ -74,6 +74,53 @@ test('cron create rejects --args that is not a JSON object', async () => {
   );
 });
 
+test('cron create rejects a non-integer --timeout before calling the client', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  await assert.rejects(
+    runCronCommand(
+      ['create', 'purge', '--cron', '0 3 * * *', '--target', 'edge_function', '--function', 'cleanup', '--timeout', '600s'],
+      config(),
+      fakeClient(calls)
+    ),
+    /--timeout must be an integer/
+  );
+  assert.equal(calls.length, 0);
+});
+
+test('cron create passes a valid --timeout through as a number', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  await runCronCommand(
+    ['create', 'purge', '--cron', '0 3 * * *', '--target', 'edge_function', '--function', 'cleanup', '--timeout', '600'],
+    config(),
+    fakeClient(calls)
+  );
+  assert.equal(calls[0]?.timeoutSeconds, 600);
+});
+
+test('cron runs rejects a non-integer --limit before calling the client', async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  await assert.rejects(
+    runCronCommand(['runs', 'purge', '--limit', 'abc'], config(), fakeClient(calls)),
+    /--limit must be an integer/
+  );
+  assert.equal(calls.length, 0);
+});
+
+test('cron rejects zero or negative --timeout and --limit', async () => {
+  await assert.rejects(
+    runCronCommand(
+      ['create', 'purge', '--cron', '0 3 * * *', '--target', 'edge_function', '--timeout', '0'],
+      config(),
+      fakeClient()
+    ),
+    /--timeout must be an integer >= 1/
+  );
+  await assert.rejects(
+    runCronCommand(['runs', '--limit', '-5'], config(), fakeClient()),
+    /--limit must be an integer >= 1/
+  );
+});
+
 test('cron create requires --cron and --target', async () => {
   await assert.rejects(runCronCommand(['create', 'x', '--target', 'db_function'], config(), fakeClient()), /--cron is required/);
   await assert.rejects(runCronCommand(['create', 'x', '--cron', '0 * * * *'], config(), fakeClient()), /--target is required/);

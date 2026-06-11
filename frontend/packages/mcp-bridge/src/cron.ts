@@ -1,5 +1,5 @@
 import type { BridgeConfig } from './config.js';
-import { parseFunctionArgs } from './functions.js';
+import { intOption, parseFunctionArgs } from './functions.js';
 import { NubaseClient } from './nubase-client.js';
 
 export async function runCronCommand(args: string[], config: BridgeConfig, client = new NubaseClient(config)) {
@@ -60,7 +60,7 @@ async function cronDelete(args: string[], client: NubaseClient) {
 
 async function cronRuns(args: string[], client: NubaseClient) {
   const { positional, options } = parseFunctionArgs(args);
-  const limit = typeof options.limit === 'string' ? Number(options.limit) : undefined;
+  const limit = intOption(options, 'limit', { min: 1 });
   if (positional[0]) {
     return client.cronJobRuns({ name: positional[0], limit });
   }
@@ -78,7 +78,7 @@ function optionalJobFields(options: Record<string, string | boolean>) {
     requestBody: stringOption(options.body),
     dbFunctionName: stringOption(options['db-function']),
     dbFunctionArgs: typeof options.args === 'string' ? parseJsonObjectOption(options.args, 'args') : undefined,
-    timeoutSeconds: typeof options.timeout === 'string' ? Number(options.timeout) : undefined,
+    timeoutSeconds: intOption(options, 'timeout', { min: 1 }),
   };
 }
 

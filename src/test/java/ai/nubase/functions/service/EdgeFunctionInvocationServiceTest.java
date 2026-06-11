@@ -105,6 +105,23 @@ class EdgeFunctionInvocationServiceTest {
     }
 
     @Test
+    void verifyJwtRejectsUnknownCallerRole() {
+        assertThatThrownBy(() -> service.invoke("hello", command("anonymous")))
+                .isInstanceOf(EdgeFunctionException.class)
+                .satisfies(e -> assertThat(((EdgeFunctionException) e).code()).isEqualTo("JWT_REQUIRED"));
+    }
+
+    @Test
+    void invalidSlugIsReportedAsBadRequest() {
+        assertThatThrownBy(() -> service.invoke("!!!", command(EdgeFunctionInvocationCommand.ROLE_ANON)))
+                .isInstanceOf(EdgeFunctionException.class)
+                .satisfies(e -> {
+                    assertThat(((EdgeFunctionException) e).code()).isEqualTo("INVALID_FUNCTION_SLUG");
+                    assertThat(((EdgeFunctionException) e).status().value()).isEqualTo(400);
+                });
+    }
+
+    @Test
     void failedInvocationIsStillLogged() {
         when(functionRepository.findByProjectRefAndSlug("app1", "missing")).thenReturn(Optional.empty());
 

@@ -6,6 +6,7 @@ import ai.nubase.postgrest.api.ApiRequest;
 import ai.nubase.postgrest.api.ApiRequestParser;
 import ai.nubase.postgrest.api.Preferences;
 import ai.nubase.postgrest.auth.AuthResult;
+import ai.nubase.postgrest.auth.PostgrestRequestContext;
 import ai.nubase.postgrest.query.QueryExecutor;
 import ai.nubase.postgrest.query.QueryPlan;
 import ai.nubase.postgrest.query.QueryPlanner;
@@ -22,14 +23,12 @@ import org.springframework.core.NestedExceptionUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -63,8 +62,8 @@ public class PostgrestController {
     private final ApiRequestParser requestParser;
     private final QueryPlanner queryPlanner;
     private final QueryExecutor queryExecutor;
-    private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final PostgrestRequestContext postgrestRequestContext;
 
     // ==================== HTTP method entry points ====================
 
@@ -160,8 +159,7 @@ public class PostgrestController {
             AuthResult authResult = authenticateRequest(request, jwtSecret);
 
             // 5. Set PostgreSQL role and request context
-            setDatabaseRole(authResult.getRole());
-            setRequestContext(request, authResult.getClaims());
+            postgrestRequestContext.apply(authResult.getRole(), request, authResult.getClaims());
 
             // 6. Parse the request
             ApiRequest apiRequest = requestParser.parse(request, schema, table);
@@ -189,7 +187,7 @@ public class PostgrestController {
             return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, NestedExceptionUtils.getMostSpecificCause(e).getMessage());
         } finally {
             // Reset role
-            resetDatabaseRole();
+            postgrestRequestContext.resetDatabaseRole();
         }
     }
 
@@ -220,8 +218,7 @@ public class PostgrestController {
             AuthResult authResult = authenticateRequest(request, jwtSecret);
 
             // 4. Set PostgreSQL role and request context
-            setDatabaseRole(authResult.getRole());
-            setRequestContext(request, authResult.getClaims());
+            postgrestRequestContext.apply(authResult.getRole(), request, authResult.getClaims());
 
             // 5. Parse the RPC request
             ApiRequest apiRequest = requestParser.parseRpc(request, schema, functionName);
@@ -382,113 +379,6 @@ public class PostgrestController {
         return new AuthResult(role, true, claims, null);
     }
 
-    /**
-     * Set the PostgreSQL database role.
-     */
-    private void setDatabaseRole(String role) {
-        // The tenant connection runs as the table OWNER (db_user), which bypasses RLS. RLS is only
-        // enforced once we switch to a non-owner role (authenticated/anon/service_role). If that switch
-        // fails we MUST NOT run the query as the owner — fail closed rather than leaking every row.
-        if (role == null || !role.matches("^[a-zA-Z_][a-zA-Z0-9_]*$")) {
-            throw new IllegalStateException("Refusing to set an invalid database role: " + role);
-        }
-        try {
-            jdbcTemplate.execute(String.format("SET LOCAL ROLE %s", quote(role)));
-            log.debug("Set database role to: {}", role);
-        } catch (Exception e) {
-            log.error("Failed to set database role {} — aborting request to avoid an RLS bypass: {}",
-                    role, e.getMessage());
-            throw new IllegalStateException("Could not establish the database role for this request", e);
-        }
-    }
-
-    /**
-     * Reset the PostgreSQL database role.
-     */
-    private void resetDatabaseRole() {
-        try {
-            jdbcTemplate.execute("RESET ROLE");
-            log.debug("Reset database role");
-        } catch (Exception e) {
-            log.warn("Failed to reset database role: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * Set the request context as PostgreSQL session variables.
-     * Matches PostgREST's behavior: https://postgrest.org/en/stable/references/transactions.html
-     * <p>
-     * Sets the following GUC variables (all are transaction-scoped):
-     * - request.jwt.claims - JWT token claims as JSON
-     * - request.headers - HTTP headers as JSON
-     * - request.cookies - Cookies as JSON
-     * - request.path - Request path (e.g., "/users")
-     * - request.method - HTTP method (e.g., "GET")
-     */
-    private void setRequestContext(HttpServletRequest request, Claims claims) {
-        try {
-            // 1. Set JWT claims
-            if (claims != null) {
-                String claimsJson = objectMapper.writeValueAsString(claims);
-                setGucVariable("request.jwt.claims", claimsJson);
-                log.debug("Set JWT claims: {}", claimsJson);
-            }
-
-            // 2. Set HTTP headers as JSON
-            Map<String, String> headers = new HashMap<>();
-            java.util.Enumeration<String> headerNames = request.getHeaderNames();
-            while (headerNames.hasMoreElements()) {
-                String headerName = headerNames.nextElement();
-                // Lowercase header names to match PostgREST
-                headers.put(headerName.toLowerCase(), request.getHeader(headerName));
-            }
-            String headersJson = objectMapper.writeValueAsString(headers);
-            setGucVariable("request.headers", headersJson);
-            log.debug("Set request headers");
-
-            // 3. Set cookies as JSON
-            Map<String, String> cookies = new HashMap<>();
-            if (request.getCookies() != null) {
-                for (jakarta.servlet.http.Cookie cookie : request.getCookies()) {
-                    cookies.put(cookie.getName(), cookie.getValue());
-                }
-            }
-            String cookiesJson = objectMapper.writeValueAsString(cookies);
-            setGucVariable("request.cookies", cookiesJson);
-            log.debug("Set request cookies");
-
-            // 4. Set the request path
-            String path = request.getRequestURI();
-            setGucVariable("request.path", path);
-            log.debug("Set request path: {}", path);
-
-            // 5. Set the HTTP method
-            String method = request.getMethod();
-            setGucVariable("request.method", method);
-            log.debug("Set request method: {}", method);
-
-        } catch (Exception e) {
-            log.warn("Failed to set request context: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * Set a PostgreSQL GUC (Grand Unified Configuration) variable.
-     * Uses set_config() with is_local=true so the variable is transaction-scoped.
-     */
-    private void setGucVariable(String name, String value) {
-        try {
-            // Escape single quotes for SQL
-            String escapedValue = value.replace("'", "''");
-
-            // set_config(setting_name, new_value, is_local)
-            // is_local=true makes it a SET LOCAL (transaction-scoped, auto-reset after the transaction)
-            String sql = String.format("SELECT set_config('%s', '%s', true)", name, escapedValue);
-            jdbcTemplate.execute(sql);
-        } catch (Exception e) {
-            log.warn("Failed to set GUC variable {}: {}", name, e.getMessage());
-        }
-    }
 
     /**
      * Build the response.
@@ -584,33 +474,6 @@ public class PostgrestController {
         return ResponseEntity.ok()
                 .contentType(contentType)
                 .body(json);
-    }
-
-    /**
-     * Quote a PostgreSQL identifier (table or column name) to handle special characters.
-     * Follows the PostgreSQL standard: https://www.postgresql.org/docs/current/sql-syntax-lexical.html
-     * The implementation matches PostgREST's escapeIdent function.
-     */
-    private String quote(String identifier) {
-        if (identifier == null) {
-            throw new IllegalArgumentException("Identifier cannot be null");
-        }
-        // Strip null characters (safety measure, matches PostgREST)
-        String trimmed = trimNullChars(identifier);
-        // Escape internal double quotes (by doubling them)
-        String escaped = trimmed.replace("\"", "\"\"");
-        // Wrap with double quotes
-        return "\"" + escaped + "\"";
-    }
-
-    /**
-     * Strip null characters from a string.
-     * PostgreSQL does not allow null bytes in identifiers.
-     * Matches PostgREST's trimNullChars function.
-     */
-    private String trimNullChars(String str) {
-        int nullIndex = str.indexOf('\0');
-        return nullIndex >= 0 ? str.substring(0, nullIndex) : str;
     }
 
     /**

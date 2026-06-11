@@ -42,13 +42,16 @@ public class EdgeFunctionInvocationService {
     public EdgeFunctionInvocationResponse invoke(String functionSlug, EdgeFunctionInvocationCommand command) {
         long start = System.nanoTime();
         String projectRef = projectRef();
-        String slug = EdgeFunctionNames.normalizeSlug(functionSlug);
+        String slug = normalizeSlug(functionSlug);
         EdgeFunctionVersion version = null;
         Integer status = null;
         String errorCode = null;
         String errorMessage = null;
 
         try {
+            if (!command.hasRecognizedRole()) {
+                throw new EdgeFunctionException(HttpStatus.UNAUTHORIZED, "JWT_REQUIRED", "Function requires a valid user JWT");
+            }
             rateLimiter.check(projectRef, slug);
             EdgeFunction function = functionRepository.findByProjectRefAndSlug(projectRef, slug)
                     .orElseThrow(() -> new EdgeFunctionException(HttpStatus.NOT_FOUND, "FUNCTION_NOT_FOUND", "Function not found"));
@@ -74,7 +77,8 @@ public class EdgeFunctionInvocationService {
                     command.queryString(),
                     command.headers(),
                     command.body() == null ? new byte[0] : command.body(),
-                    invocationEnv(function)
+                    invocationEnv(function),
+                    command.timeoutSeconds()
             ));
             status = response.statusCode();
             errorCode = response.errorCode();
@@ -130,6 +134,14 @@ public class EdgeFunctionInvocationService {
             throw new EdgeFunctionException(HttpStatus.UNAUTHORIZED, "TENANT_CONTEXT_REQUIRED", "Project context is required");
         }
         return projectRef;
+    }
+
+    private String normalizeSlug(String value) {
+        try {
+            return EdgeFunctionNames.normalizeSlug(value);
+        } catch (IllegalArgumentException e) {
+            throw new EdgeFunctionException(HttpStatus.BAD_REQUEST, "INVALID_FUNCTION_SLUG", e.getMessage());
+        }
     }
 
     private String truncate(String value, int max) {

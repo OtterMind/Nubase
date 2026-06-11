@@ -42,11 +42,12 @@ class ScheduledJobRunnerTest {
     @BeforeEach
     void setUp() throws Exception {
         lenient().when(target.type()).thenReturn(ScheduledJob.TARGET_DB_FUNCTION);
-        runner = new ScheduledJobRunner(store, new CronProperties(), tenantContext, List.of(target));
+        runner = new ScheduledJobRunner(store, new CronProperties(), tenantContext, Runnable::run, List.of(target));
         lenient().when(tenantContext.runAs(anyString(), any())).thenAnswer(inv -> {
             Callable<?> action = inv.getArgument(1);
             return action.call();
         });
+        lenient().when(store.complete(any(), any(), any(), any())).thenReturn(true);
     }
 
     @Test
@@ -62,7 +63,7 @@ class ScheduledJobRunnerTest {
         verify(store).recordRun(runCaptor.capture());
         assertThat(runCaptor.getValue().getStatus()).isEqualTo(ScheduledJobRun.STATUS_SUCCESS);
         assertThat(runCaptor.getValue().getResult()).isEqualTo("1 row");
-        verify(store).complete(eq(job.getId()), eq(ScheduledJobRun.STATUS_SUCCESS), any(Instant.class));
+        verify(store).complete(eq(job.getId()), eq(job.getNextRunAt()), eq(ScheduledJobRun.STATUS_SUCCESS), any(Instant.class));
     }
 
     @Test
@@ -90,7 +91,25 @@ class ScheduledJobRunnerTest {
         verify(store).recordRun(runCaptor.capture());
         assertThat(runCaptor.getValue().getStatus()).isEqualTo(ScheduledJobRun.STATUS_FAILED);
         assertThat(runCaptor.getValue().getErrorMessage()).contains("boom");
-        verify(store).complete(eq(job.getId()), eq(ScheduledJobRun.STATUS_FAILED), any(Instant.class));
+        verify(store).complete(eq(job.getId()), eq(job.getNextRunAt()), eq(ScheduledJobRun.STATUS_FAILED), any(Instant.class));
+    }
+
+    @Test
+    void completeFailureDoesNotPreventNextClaimedJob() throws Exception {
+        ScheduledJob first = dueJob();
+        ScheduledJob second = dueJob();
+        second.setName("second");
+        when(store.findDue(any(), anyInt())).thenReturn(List.of(first, second));
+        when(store.claim(any(), any(), any(), any(), any())).thenReturn(true);
+        when(target.execute(any())).thenReturn(RunOutcome.success("ok"));
+        when(store.complete(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("db down"))
+                .thenReturn(true);
+
+        runner.tick();
+
+        verify(target).execute(first);
+        verify(target).execute(second);
     }
 
     @Test

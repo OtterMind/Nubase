@@ -63,7 +63,7 @@ class ScheduledJobClaimIT {
         assertThat(store.claim(job.getId(), next, next.plus(5, ChronoUnit.MINUTES), lockedUntil, now)).isFalse();
 
         // complete() releases the lock; the next occurrence can then be claimed.
-        store.complete(job.getId(), "success", next);
+        store.complete(job.getId(), next, "success", next);
         assertThat(store.claim(job.getId(), next, next.plus(5, ChronoUnit.MINUTES),
                 now.plus(10, ChronoUnit.MINUTES), now)).isTrue();
 

@@ -101,6 +101,34 @@ test('functions deploy auto-bundles a TypeScript entrypoint', async () => {
   assert.match(source, /NUBASE_PROJECT_REF/);
 });
 
+test('functions deploy reads manifest entrypoint and updates existing function metadata', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'nubase-functions-'));
+  const cwd = process.cwd();
+  const calls: string[] = [];
+  let uploadedBundle = '';
+  try {
+    process.chdir(dir);
+    const fnDir = path.join(dir, 'nubase/functions/hello');
+    await mkdir(fnDir, { recursive: true });
+    await writeFile(path.join(fnDir, 'main.ts'), 'export default { fetch() { return new Response("ok"); } };\n');
+    await writeFile(path.join(fnDir, 'nubase-function.json'), JSON.stringify({
+      name: 'Hello Fn',
+      entrypoint: 'main.ts',
+      verifyJwt: false,
+      privileged: true,
+    }));
+    await runFunctionsCommand(['deploy', 'hello'], config(), fakeClient(calls, (bundle) => {
+      uploadedBundle = bundle;
+    }, true));
+  } finally {
+    process.chdir(cwd);
+    await rm(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(calls, ['create:hello', 'update:hello:main.ts:false:undefined', 'deploy:hello']);
+  const payload = JSON.parse(Buffer.from(uploadedBundle, 'base64').toString('utf8'));
+  assert.equal(payload.files[0].path, 'index.js');
+});
+
 test('functions deploy --no-bundle uploads the raw TypeScript directory', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'nubase-functions-'));
   const cwd = process.cwd();
@@ -175,11 +203,16 @@ function config(): BridgeConfig {
   };
 }
 
-function fakeClient(calls: string[] = [], onDeploy?: (sourceBundleBase64: string) => void) {
+function fakeClient(calls: string[] = [], onDeploy?: (sourceBundleBase64: string) => void, createAlreadyExists = false) {
   return {
     functionsList: async () => [],
     functionsCreate: async (args: Record<string, unknown>) => {
       calls.push(`create:${args.slug}`);
+      if (createAlreadyExists) throw new Error('FUNCTION_EXISTS');
+      return { ok: true };
+    },
+    functionsUpdate: async (args: Record<string, unknown>) => {
+      calls.push(`update:${args.slug}:${args.entrypoint}:${args.verifyJwt}:${args.privileged}`);
       return { ok: true };
     },
     functionsDeploy: async (args: Record<string, unknown>) => {

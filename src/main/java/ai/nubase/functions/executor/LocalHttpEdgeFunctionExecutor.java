@@ -55,7 +55,7 @@ public class LocalHttpEdgeFunctionExecutor extends AbstractHttpEdgeFunctionExecu
         builder.header("x-nubase-function-slug", request.functionSlug());
         request.env().forEach((key, value) -> builder.header("x-nubase-env-" + key.toLowerCase(Locale.ROOT), value));
 
-        try (Response response = httpClient().newCall(builder.build()).execute()) {
+        try (Response response = httpClient(request.timeoutSeconds()).newCall(builder.build()).execute()) {
             byte[] responseBytes = readBody(response.body());
             return new EdgeFunctionInvocationResponse(
                     response.code(),
@@ -64,7 +64,7 @@ public class LocalHttpEdgeFunctionExecutor extends AbstractHttpEdgeFunctionExecu
                     null,
                     null
             );
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             log.warn("Local edge function invocation failed: projectRef={}, slug={}, error={}",
                     request.projectRef(), request.functionSlug(), e.toString());
             return EdgeFunctionInvocationResponse.error(502, "EXECUTOR_ERROR", e.getMessage());

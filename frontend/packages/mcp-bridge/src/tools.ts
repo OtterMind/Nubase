@@ -1,6 +1,7 @@
 import type { BridgeConfig } from './config.js';
 import { withScope } from './context.js';
 import { fetchDocs } from './docs.js';
+import { runFunctionsCommand } from './functions.js';
 import type { NubaseClient } from './nubase-client.js';
 
 export interface ToolDefinition {
@@ -183,6 +184,73 @@ export const TOOLS: ToolDefinition[] = [
       endDate: { type: 'string' },
     }),
   },
+  {
+    name: 'functions_list',
+    description: 'List Edge Functions for this project. Read-only.',
+    inputSchema: objectSchema({}),
+  },
+  {
+    name: 'functions_new',
+    description: 'Scaffold a local Edge Function under nubase/functions/<name>. Writes local files only.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+    }, ['name']),
+  },
+  {
+    name: 'functions_deploy',
+    description: 'Bundle and deploy a local Edge Function using the same manifest, esbuild, sourceHash, and sourceBundleBase64 flow as nubase_cli functions deploy. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+      dir: { type: 'string' },
+      bundle: { type: 'boolean' },
+      noBundle: { type: 'boolean' },
+      noVerifyJwt: { type: 'boolean' },
+    }, ['name']),
+  },
+  {
+    name: 'functions_invoke',
+    description: 'Invoke a deployed Edge Function over /functions/v1 and return the HTTP status, headers, and body envelope. Function-level 4xx/5xx responses are returned, not thrown.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+      method: { type: 'string' },
+      path: { type: 'string' },
+      body: { type: 'string' },
+      contentType: { type: 'string' },
+    }, ['name']),
+  },
+  {
+    name: 'functions_logs',
+    description: 'List Edge Function invocation logs, optionally filtered by function name. Read-only.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+      limit: { type: 'number' },
+    }),
+  },
+  {
+    name: 'functions_delete',
+    description: 'Delete an Edge Function. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+    }, ['name']),
+  },
+  {
+    name: 'functions_secrets_list',
+    description: 'List secret names for an Edge Function. Read-only; secret values are never returned.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+    }, ['name']),
+  },
+  {
+    name: 'functions_secrets_set',
+    description: 'Set Edge Function secrets from an object of KEY/value pairs. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+      secrets: {
+        type: 'object',
+        additionalProperties: { type: 'string' },
+      },
+    }, ['name', 'secrets']),
+  },
 ];
 
 export async function callTool(
@@ -238,9 +306,59 @@ export async function callTool(
       return client.gatewayRevokeKey(args);
     case 'gateway_usage':
       return client.gatewayUsage(args);
+    case 'functions_list':
+      return client.functionsList();
+    case 'functions_new':
+      return runFunctionsCommand(['new', requiredString(args.name, 'name')], config, client);
+    case 'functions_deploy':
+      return runFunctionsCommand(functionsDeployArgs(args), config, client);
+    case 'functions_invoke':
+      return client.functionsInvoke({
+        slug: requiredString(args.name, 'name'),
+        method: typeof args.method === 'string' ? args.method : undefined,
+        path: typeof args.path === 'string' ? args.path : undefined,
+        body: typeof args.body === 'string' ? args.body : undefined,
+        contentType: typeof args.contentType === 'string' ? args.contentType : undefined,
+      });
+    case 'functions_logs':
+      return client.functionsLogs({
+        slug: typeof args.name === 'string' ? args.name : undefined,
+        limit: typeof args.limit === 'number' ? args.limit : undefined,
+      });
+    case 'functions_delete':
+      return client.functionsDelete({ slug: requiredString(args.name, 'name') });
+    case 'functions_secrets_list':
+      return client.functionsListSecrets({ slug: requiredString(args.name, 'name') });
+    case 'functions_secrets_set':
+      return client.functionsSetSecrets({
+        slug: requiredString(args.name, 'name'),
+        secrets: requiredObject(args.secrets, 'secrets'),
+      });
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
+}
+
+function functionsDeployArgs(args: Record<string, unknown>) {
+  const cliArgs = ['deploy', requiredString(args.name, 'name')];
+  if (typeof args.dir === 'string' && args.dir) cliArgs.push('--dir', args.dir);
+  if (args.bundle === true && args.noBundle === true) {
+    throw new Error('functions_deploy cannot set both bundle and noBundle');
+  }
+  if (args.bundle === true) cliArgs.push('--bundle');
+  if (args.noBundle === true) cliArgs.push('--no-bundle');
+  if (args.noVerifyJwt === true) cliArgs.push('--no-verify-jwt');
+  return cliArgs;
+}
+
+function requiredString(value: unknown, name: string) {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} is required`);
+  return value;
+}
+
+function requiredObject(value: unknown, name: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} object is required`);
+  return value as Record<string, unknown>;
 }
 
 function objectSchema(properties: Record<string, unknown>, required: string[] = []) {

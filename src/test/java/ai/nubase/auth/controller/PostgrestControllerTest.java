@@ -5,6 +5,7 @@ import ai.nubase.postgrest.api.ApiRequest;
 import ai.nubase.postgrest.api.ApiRequestParser;
 import ai.nubase.postgrest.api.Preferences;
 import ai.nubase.postgrest.api.RangeHeader;
+import ai.nubase.postgrest.auth.PostgrestRequestContext;
 import ai.nubase.postgrest.query.QueryExecutor;
 import ai.nubase.postgrest.query.QueryPlan;
 import ai.nubase.postgrest.query.QueryPlanner;
@@ -47,8 +48,8 @@ class PostgrestControllerTest {
                 requestParser,
                 queryPlanner,
                 queryExecutor,
-                jdbcTemplate,
-                new ObjectMapper());
+                new ObjectMapper(),
+                new PostgrestRequestContext(jdbcTemplate, new ObjectMapper()));
     }
 
     @AfterEach

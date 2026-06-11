@@ -29,6 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -91,34 +93,42 @@ public class CloudflareEdgeFunctionExecutor extends AbstractHttpEdgeFunctionExec
 
     @Override
     public EdgeFunctionInvocationResponse invoke(EdgeFunctionInvocationRequest request) {
-        validateConfigForInvoke();
-        byte[] body = request.body() == null ? new byte[0] : request.body();
-        String timestamp = String.valueOf(Instant.now().getEpochSecond());
-        String signature = sign(request, body, timestamp);
-        String url = buildUrl(properties.getCloudflare().getDispatcherUrl(), request);
+        try {
+            validateConfigForInvoke();
+            byte[] body = request.body() == null ? new byte[0] : request.body();
+            String timestamp = String.valueOf(Instant.now().getEpochSecond());
+            String signature = sign(request, body, timestamp);
+            String url = buildUrl(properties.getCloudflare().getDispatcherUrl(), request);
 
-        RequestBody requestBody = buildRequestBody(request, body);
-        Request.Builder builder = new Request.Builder().url(url).method(request.method(), requestBody);
-        copyForwardableHeaders(request, builder);
-        builder.header("x-nubase-request-id", request.requestId());
-        builder.header("x-nubase-project-ref", request.projectRef());
-        builder.header("x-nubase-function-slug", request.functionSlug());
-        builder.header("x-nubase-deployment-id", request.providerDeploymentId());
-        builder.header("x-nubase-timestamp", timestamp);
-        builder.header("x-nubase-signature", signature);
+            RequestBody requestBody = buildRequestBody(request, body);
+            Request.Builder builder = new Request.Builder().url(url).method(request.method(), requestBody);
+            copyForwardableHeaders(request, builder);
+            builder.header("x-nubase-request-id", request.requestId());
+            builder.header("x-nubase-project-ref", request.projectRef());
+            builder.header("x-nubase-function-slug", request.functionSlug());
+            builder.header("x-nubase-deployment-id", request.providerDeploymentId());
+            builder.header("x-nubase-timestamp", timestamp);
+            builder.header("x-nubase-signature", signature);
 
-        try (Response response = httpClient().newCall(builder.build()).execute()) {
-            return new EdgeFunctionInvocationResponse(
-                    response.code(),
-                    toHeaderMap(response.headers()),
-                    readBody(response.body()),
-                    null,
-                    null
-            );
-        } catch (IOException e) {
+            try (Response response = httpClient(request.timeoutSeconds()).newCall(builder.build()).execute()) {
+                return new EdgeFunctionInvocationResponse(
+                        response.code(),
+                        toHeaderMap(response.headers()),
+                        readBody(response.body()),
+                        null,
+                        null
+                );
+            }
+        } catch (IOException | RuntimeException e) {
             log.warn("Cloudflare edge function invocation failed: projectRef={}, slug={}, error={}",
                     request.projectRef(), request.functionSlug(), e.toString());
-            return EdgeFunctionInvocationResponse.error(502, "CLOUDFLARE_EXECUTOR_ERROR", e.getMessage());
+            return new EdgeFunctionInvocationResponse(
+                    502,
+                    Map.of(),
+                    new byte[0],
+                    "CLOUDFLARE_EXECUTOR_ERROR",
+                    e.getMessage()
+            );
         }
     }
 
@@ -288,15 +298,14 @@ public class CloudflareEdgeFunctionExecutor extends AbstractHttpEdgeFunctionExec
 
     private String buildWorkerModule(EdgeFunctionDeploymentRequest request, String entrypoint) {
         return """
-                const __envDefaults = {
+                const __nubaseEnvDefaults = {
                   NUBASE_PROJECT_REF: %s,
                   NUBASE_FUNCTION_NAME: %s
                 };
                 %s
-                const __userDefault = globalThis.default;
                 export default {
                   async fetch(request, env, ctx) {
-                    const mergedEnv = Object.assign({}, __envDefaults, env || {});
+                    const mergedEnv = Object.assign({}, __nubaseEnvDefaults, env || {});
                     if (__userDefault && typeof __userDefault.fetch === "function") {
                       return __userDefault.fetch(request, mergedEnv, ctx);
                     }
@@ -306,14 +315,21 @@ public class CloudflareEdgeFunctionExecutor extends AbstractHttpEdgeFunctionExec
                 """.formatted(
                 jsonString(request.projectRef()),
                 jsonString(request.functionSlug()),
-                stripEsmDefault(entrypoint)
+                bindUserDefault(entrypoint)
         );
     }
 
-    private String stripEsmDefault(String source) {
-        return source
-                .replaceFirst("export\\s+default\\s+", "globalThis.default = ")
-                .replaceFirst("export\\s+\\{\\s*default\\s*\\}\\s*;", "");
+    private String bindUserDefault(String source) {
+        String transformed = source.replaceFirst("export\\s+default\\s+", "const __userDefault = ");
+        if (!transformed.equals(source)) return transformed;
+
+        Pattern exportedDefault = Pattern.compile("export\\s*\\{\\s*([A-Za-z_$][A-Za-z0-9_$]*)\\s+as\\s+default\\s*}\\s*;?");
+        Matcher matcher = exportedDefault.matcher(source);
+        if (matcher.find()) {
+            return matcher.replaceFirst("const __userDefault = " + matcher.group(1) + ";");
+        }
+
+        return source + "\nconst __userDefault = globalThis.default;\n";
     }
 
     private String jsonString(String value) {
@@ -356,11 +372,9 @@ public class CloudflareEdgeFunctionExecutor extends AbstractHttpEdgeFunctionExec
     }
 
     private String workerName(String projectRef, String slug) {
-        String raw = "nubase-" + projectRef + "-" + slug;
-        String safe = raw.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]+", "-").replaceAll("-+", "-");
-        if (safe.length() <= 63) return safe;
-        String hash = HexFormat.of().formatHex(sha256(safe)).substring(0, 12);
-        return safe.substring(0, 50).replaceAll("-+$", "") + "-" + hash;
+        String projectHash = HexFormat.of().formatHex(sha256(projectRef)).substring(0, 16);
+        String slugHash = HexFormat.of().formatHex(sha256(slug)).substring(0, 16);
+        return "nubase-" + projectHash + "-" + slugHash;
     }
 
     private byte[] sha256(String value) {

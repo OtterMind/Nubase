@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarClock, Database, Play, Plus, RefreshCw, Trash2, Zap } from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@nubase/ui';
 import { apiFetch, API_BASE, type ApiError } from '@/lib/api';
@@ -113,21 +113,31 @@ function CronInner({ projectRef }: { projectRef: string }) {
 
   const current = jobs.find((job) => job.name === selected) ?? jobs[0] ?? null;
 
+  // Monotonic request id so a slow response for a previously selected job
+  // can never overwrite the runs of the currently selected one.
+  const runsRequestRef = useRef(0);
+
   const loadRuns = useCallback(async (name: string) => {
+    const requestId = ++runsRequestRef.current;
     try {
       const res = await apiFetch<ScheduledJobRun[]>(
         `/cron/admin/v1/jobs/${encodeURIComponent(name)}/runs?limit=50`,
         { apikey, authScope: 'tenant' }
       );
-      setRuns(res);
+      if (runsRequestRef.current === requestId) setRuns(res);
     } catch {
-      setRuns([]);
+      if (runsRequestRef.current === requestId) setRuns([]);
     }
   }, [apikey]);
 
   useEffect(() => {
-    if (current?.name) loadRuns(current.name);
-    else setRuns([]);
+    if (current?.name) {
+      loadRuns(current.name);
+    } else {
+      // Invalidate any in-flight request so it cannot repopulate the cleared pane.
+      runsRequestRef.current += 1;
+      setRuns([]);
+    }
   }, [current?.name, loadRuns]);
 
   async function createJob(e: React.FormEvent) {

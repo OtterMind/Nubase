@@ -16,6 +16,10 @@ public class CronProperties {
     private long tickMs = 30_000;
     /** Upper bound of jobs claimed per tick per instance. */
     private int maxJobsPerTick = 50;
+    /** Maximum number of scheduled jobs executing concurrently per instance. */
+    private int maxConcurrentJobs = 8;
+    /** Queue capacity for claimed jobs waiting for an execution thread. */
+    private int executionQueueCapacity = 100;
     /** Applied when a job has no timeout_seconds of its own. */
     private int defaultTimeoutSeconds = 60;
     /** Hard cap for per-job timeout_seconds. */

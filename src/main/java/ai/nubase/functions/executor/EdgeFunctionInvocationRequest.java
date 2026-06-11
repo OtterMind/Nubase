@@ -13,6 +13,21 @@ public record EdgeFunctionInvocationRequest(
         String queryString,
         Map<String, List<String>> headers,
         byte[] body,
-        Map<String, String> env
+        Map<String, String> env,
+        Integer timeoutSeconds
 ) {
+    public EdgeFunctionInvocationRequest(
+            String requestId,
+            String projectRef,
+            String functionSlug,
+            String providerDeploymentId,
+            String method,
+            String path,
+            String queryString,
+            Map<String, List<String>> headers,
+            byte[] body,
+            Map<String, String> env
+    ) {
+        this(requestId, projectRef, functionSlug, providerDeploymentId, method, path, queryString, headers, body, env, null);
+    }
 }

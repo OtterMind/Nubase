@@ -319,12 +319,6 @@ function FunctionsInner({ projectRef }: { projectRef: string }) {
                       icon={current.verifyJwt ? ShieldCheck : ShieldOff}
                       onClick={() => patchFunction(current, { verifyJwt: !current.verifyJwt })}
                     />
-                    <ToggleTile
-                      label="Privileged"
-                      active={current.privileged}
-                      icon={ShieldCheck}
-                      onClick={() => patchFunction(current, { privileged: !current.privileged })}
-                    />
                     <div className="rounded-lg border border-border bg-background p-3">
                       <div className="text-xs text-muted-foreground">Entrypoint</div>
                       <div className="mt-2 font-mono text-sm">{current.entrypoint}</div>

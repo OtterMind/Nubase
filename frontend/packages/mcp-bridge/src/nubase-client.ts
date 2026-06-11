@@ -219,6 +219,23 @@ export class NubaseClient {
     );
   }
 
+  functionsUpdate(args: Record<string, unknown>) {
+    const slug = requiredString(args.slug, 'slug');
+    return this.guardedWrite('update edge function', () =>
+      this.request(`/functions/admin/v1/functions/${encodeURIComponent(slug)}`, {
+        method: 'PATCH',
+        body: {
+          name: typeof args.name === 'string' ? args.name : undefined,
+          description: typeof args.description === 'string' ? args.description : undefined,
+          verifyJwt: args.verifyJwt,
+          enabled: args.enabled,
+          privileged: args.privileged,
+          entrypoint: typeof args.entrypoint === 'string' ? args.entrypoint : undefined,
+        },
+      })
+    );
+  }
+
   functionsDeploy(args: Record<string, unknown>) {
     const slug = requiredString(args.slug, 'slug');
     const sourceHash = requiredString(args.sourceHash, 'sourceHash');

@@ -26,7 +26,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.Instant;
 import java.util.List;
 
 import static ai.nubase.functions.service.EdgeFunctionExceptions.EdgeFunctionException;
@@ -41,6 +40,7 @@ public class EdgeFunctionAdminService {
     private final EdgeFunctionSecretRepository secretRepository;
     private final EdgeFunctionInvocationRepository invocationRepository;
     private final EdgeFunctionExecutorRouter executor;
+    private final EdgeFunctionDeploymentRecorder deploymentRecorder;
     private final EncryptionService encryptionService;
     private final EdgeFunctionSecretEnv secretEnv;
 
@@ -56,10 +56,9 @@ public class EdgeFunctionAdminService {
 
     @Transactional("metadataTransactionManager")
     public EdgeFunction createFunction(CreateFunctionRequest request) {
+        rejectPrivileged(request.privileged());
         String projectRef = projectRef();
-        String slug = EdgeFunctionNames.normalizeSlug(
-                StringUtils.hasText(request.slug()) ? request.slug() : request.name()
-        );
+        String slug = normalizeSlug(StringUtils.hasText(request.slug()) ? request.slug() : request.name());
         if (functionRepository.existsByProjectRefAndSlug(projectRef, slug)) {
             throw new EdgeFunctionException(HttpStatus.CONFLICT, "FUNCTION_EXISTS", "Function already exists");
         }
@@ -79,23 +78,20 @@ public class EdgeFunctionAdminService {
 
     @Transactional("metadataTransactionManager")
     public EdgeFunction updateFunction(String slug, UpdateFunctionRequest request) {
+        rejectPrivileged(request.privileged());
         EdgeFunction fn = findFunction(slug);
         if (StringUtils.hasText(request.name())) fn.setName(request.name().trim());
         if (request.description() != null) fn.setDescription(request.description());
         if (request.verifyJwt() != null) fn.setVerifyJwt(request.verifyJwt());
         if (request.enabled() != null) fn.setEnabled(request.enabled());
-        if (request.privileged() != null) fn.setPrivileged(request.privileged());
+        if (request.privileged() != null) fn.setPrivileged(Boolean.FALSE);
         if (request.importMap() != null) fn.setImportMap(request.importMap());
         if (StringUtils.hasText(request.entrypoint())) fn.setEntrypoint(request.entrypoint().trim());
         return functionRepository.save(fn);
     }
 
-    @Transactional("metadataTransactionManager")
     public EdgeFunctionVersion deploy(String slug, DeployFunctionRequest request) {
         EdgeFunction fn = findFunction(slug);
-        int nextVersion = versionRepository.findFirstByFunctionOrderByVersionNoDesc(fn)
-                .map(version -> version.getVersionNo() + 1)
-                .orElse(1);
         EdgeFunctionDeploymentResponse deployment = executor.deploy(new EdgeFunctionDeploymentRequest(
                 fn.getProjectRef(),
                 fn.getSlug(),
@@ -103,27 +99,9 @@ public class EdgeFunctionAdminService {
                 request.sourceBundleBase64(),
                 secretEnv.decryptedEnv(fn)
         ));
-        EdgeFunctionVersion version = EdgeFunctionVersion.builder()
-                .function(fn)
-                .versionNo(nextVersion)
-                .sourceHash(request.sourceHash())
-                .artifactUri(request.artifactUri())
-                .artifactType(StringUtils.hasText(request.artifactType()) ? request.artifactType() : "source_bundle")
-                .provider(deployment.provider())
-                .providerDeploymentId(deployment.providerDeploymentId())
-                .status(deployment.status())
-                .errorMessage(deployment.errorMessage())
-                .activatedAt("deployed".equals(deployment.status()) ? Instant.now() : null)
-                .build();
-        EdgeFunctionVersion saved = versionRepository.save(version);
-        if ("deployed".equals(saved.getStatus())) {
-            fn.setActiveVersion(saved);
-            functionRepository.save(fn);
-        }
-        return saved;
+        return deploymentRecorder.record(fn.getId(), request, deployment);
     }
 
-    @Transactional("metadataTransactionManager")
     public void deleteFunction(String slug) {
         EdgeFunction fn = findFunction(slug);
         EdgeFunctionVersion active = fn.getActiveVersion();
@@ -133,7 +111,6 @@ public class EdgeFunctionAdminService {
         functionRepository.delete(fn);
     }
 
-    @Transactional("metadataTransactionManager")
     public List<EdgeFunctionSecret> setSecrets(String slug, SetFunctionSecretsRequest request) {
         EdgeFunction fn = findFunction(slug);
         if (request.secrets() == null || request.secrets().isEmpty()) {
@@ -162,8 +139,8 @@ public class EdgeFunctionAdminService {
     }
 
     // Deploy-time-bound executors (Cloudflare) would otherwise keep serving stale
-    // secrets until the next manual deploy. Failure rolls the secret writes back so
-    // storage and the deployment never disagree silently.
+    // secrets until the next manual deploy. This runs outside a metadata transaction
+    // so a slow Cloudflare call cannot hold a metadata-pool connection.
     private void syncSecretsToActiveDeployment(EdgeFunction fn) {
         EdgeFunctionVersion active = fn.getActiveVersion();
         if (active == null || !"deployed".equals(active.getStatus())) {
@@ -203,8 +180,23 @@ public class EdgeFunctionAdminService {
     }
 
     private EdgeFunction findFunction(String slug) {
-        return functionRepository.findByProjectRefAndSlug(projectRef(), EdgeFunctionNames.normalizeSlug(slug))
+        return functionRepository.findByProjectRefAndSlug(projectRef(), normalizeSlug(slug))
                 .orElseThrow(() -> new EdgeFunctionException(HttpStatus.NOT_FOUND, "FUNCTION_NOT_FOUND", "Function not found"));
+    }
+
+    private String normalizeSlug(String value) {
+        try {
+            return EdgeFunctionNames.normalizeSlug(value);
+        } catch (IllegalArgumentException e) {
+            throw new EdgeFunctionException(HttpStatus.BAD_REQUEST, "INVALID_FUNCTION_SLUG", e.getMessage());
+        }
+    }
+
+    private void rejectPrivileged(Boolean privileged) {
+        if (Boolean.TRUE.equals(privileged)) {
+            throw new EdgeFunctionException(HttpStatus.BAD_REQUEST, "PRIVILEGED_FUNCTIONS_UNSUPPORTED",
+                    "Privileged edge functions are not supported yet");
+        }
     }
 
     private String projectRef() {

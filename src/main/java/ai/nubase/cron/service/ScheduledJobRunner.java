@@ -6,6 +6,7 @@ import ai.nubase.cron.target.ScheduledJobTarget.RunOutcome;
 import ai.nubase.metadata.cron.entity.ScheduledJob;
 import ai.nubase.metadata.cron.entity.ScheduledJobRun;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -14,6 +15,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -35,15 +38,18 @@ public class ScheduledJobRunner {
     private final ScheduledJobStore store;
     private final CronProperties properties;
     private final CronTenantContext tenantContext;
+    private final Executor jobExecutor;
     private final Map<String, ScheduledJobTarget> targets;
 
     public ScheduledJobRunner(ScheduledJobStore store,
                               CronProperties properties,
                               CronTenantContext tenantContext,
+                              @Qualifier("cronJobExecutor") Executor jobExecutor,
                               List<ScheduledJobTarget> targets) {
         this.store = store;
         this.properties = properties;
         this.tenantContext = tenantContext;
+        this.jobExecutor = jobExecutor;
         this.targets = targets.stream().collect(Collectors.toMap(ScheduledJobTarget::type, Function.identity()));
     }
 
@@ -70,7 +76,44 @@ public class ScheduledJobRunner {
                 // holds the lock — either way this instance has nothing to do.
                 continue;
             }
-            runClaimedJob(job, scheduledFor);
+            submitClaimedJob(job, scheduledFor);
+        }
+    }
+
+    private void submitClaimedJob(ScheduledJob job, Instant scheduledFor) {
+        try {
+            jobExecutor.execute(() -> {
+                try {
+                    runClaimedJob(job, scheduledFor);
+                } catch (Exception e) {
+                    log.warn("Scheduled job runner failed after claim: project={}, job={}, error={}",
+                            job.getProjectRef(), job.getName(), e.toString());
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("Scheduled job executor rejected claimed job: project={}, job={}, error={}",
+                    job.getProjectRef(), job.getName(), e.toString());
+            recordRejectedJob(job, scheduledFor, e);
+        }
+    }
+
+    private void recordRejectedJob(ScheduledJob job, Instant scheduledFor, Exception e) {
+        try {
+            store.recordRun(ScheduledJobRun.builder()
+                    .jobId(job.getId())
+                    .projectRef(job.getProjectRef())
+                    .jobName(job.getName())
+                    .targetType(job.getTargetType())
+                    .scheduledFor(scheduledFor)
+                    .startedAt(Instant.now())
+                    .finishedAt(Instant.now())
+                    .status(ScheduledJobRun.STATUS_FAILED)
+                    .errorMessage(truncate("EXECUTOR_REJECTED: " + e, 1000))
+                    .build());
+            store.complete(job.getId(), job.getNextRunAt(), ScheduledJobRun.STATUS_FAILED,
+                    CronExpressions.next(job.getCronExpression(), Instant.now()));
+        } catch (Exception completeError) {
+            log.warn("Failed to record rejected scheduled job: job={}, error={}", job.getName(), completeError.toString());
         }
     }
 
@@ -121,9 +164,19 @@ public class ScheduledJobRunner {
         } catch (Exception e) {
             log.warn("Failed to record scheduled job run: job={}, error={}", job.getName(), e.toString());
         }
-        // Recompute from completion time: occurrences missed while the job was
-        // running coalesce instead of firing back-to-back.
-        store.complete(job.getId(), status, CronExpressions.next(job.getCronExpression(), Instant.now()));
+        try {
+            // Recompute from completion time: occurrences missed while the job was
+            // running coalesce instead of firing back-to-back.
+            boolean completed = store.complete(job.getId(), job.getNextRunAt(), status,
+                    CronExpressions.next(job.getCronExpression(), Instant.now()));
+            if (!completed) {
+                log.info("Skipped completing scheduled job claim because schedule changed while it ran: job={}",
+                        job.getName());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to complete scheduled job claim: job={}, status={}, error={}",
+                    job.getName(), status, e.toString());
+        }
     }
 
     private Duration lockDuration(ScheduledJob job) {

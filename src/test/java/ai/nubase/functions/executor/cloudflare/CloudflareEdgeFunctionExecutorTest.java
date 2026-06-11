@@ -18,14 +18,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CloudflareEdgeFunctionExecutorTest {
 
     @Test
-    void deploymentIdIsDeterministicAndSafe() {
-        EdgeFunctionExecutorProperties props = props("http://127.0.0.1:1");
-        props.getCloudflare().setApiBaseUrl("http://127.0.0.1:9");
-        var executor = new CloudflareEdgeFunctionExecutor(props, new ObjectMapper());
+    void deploymentIdAvoidsProjectSlugSeparatorCollisions() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"success\":true}"));
+            server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"success\":true}"));
+            server.start();
+            EdgeFunctionExecutorProperties props = props(server.url("/dispatch").toString());
+            props.getCloudflare().setApiBaseUrl(server.url("/client/v4").toString().replaceAll("/$", ""));
+            var executor = new CloudflareEdgeFunctionExecutor(props, new ObjectMapper());
 
-        var res = executor.deploy(deployRequest("Project_Ref_With_Long_Name_1234567890", "hello-world"));
+            var first = executor.deploy(deployRequest("team", "a-report"));
+            var second = executor.deploy(deployRequest("team-a", "report"));
 
-        assertThat(res.status()).isEqualTo("failed");
+            assertThat(first.providerDeploymentId()).isNotEqualTo(second.providerDeploymentId());
+            assertThat(first.providerDeploymentId()).matches("nubase-[a-f0-9]{16}-[a-f0-9]{16}");
+        }
     }
 
     @Test
@@ -42,7 +49,7 @@ class CloudflareEdgeFunctionExecutorTest {
             assertThat(res.status()).isEqualTo("deployed");
             var request = server.takeRequest();
             assertThat(request.getMethod()).isEqualTo("PUT");
-            assertThat(request.getPath()).isEqualTo("/client/v4/accounts/acct/workers/dispatch/namespaces/ns/scripts/nubase-app1-hello");
+            assertThat(request.getPath()).matches("/client/v4/accounts/acct/workers/dispatch/namespaces/ns/scripts/nubase-[a-f0-9]{16}-[a-f0-9]{16}");
             assertThat(request.getHeader("Authorization")).isEqualTo("Bearer token");
             assertThat(request.getBody().readUtf8()).contains("metadata").contains("index.js");
         }
@@ -192,6 +199,38 @@ class CloudflareEdgeFunctionExecutorTest {
             assertThat(res.status()).isEqualTo("deployed");
             assertThat(server.takeRequest().getBody().readUtf8()).contains("compiled");
         }
+    }
+
+    @Test
+    void deployWrapsEsbuildStyleDefaultReExport() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"success\":true}"));
+            server.start();
+            EdgeFunctionExecutorProperties props = props(server.url("/dispatch").toString());
+            props.getCloudflare().setApiBaseUrl(server.url("/client/v4").toString().replaceAll("/$", ""));
+            var executor = new CloudflareEdgeFunctionExecutor(props, new ObjectMapper());
+
+            var res = executor.deploy(deployRequest("app1", "hello", "index.js",
+                    bundle("index.js", "var index_default = { async fetch() { return new Response('ok') } };\nexport { index_default as default };\n")));
+
+            assertThat(res.status()).isEqualTo("deployed");
+            String body = server.takeRequest().getBody().readUtf8();
+            assertThat(body).contains("const __userDefault = index_default;");
+            assertThat(body).doesNotContain("export { index_default as default }");
+        }
+    }
+
+    @Test
+    void invokeReturnsExecutorErrorForMissingCloudflareConfig() {
+        EdgeFunctionExecutorProperties props = props("http://127.0.0.1:1");
+        props.getCloudflare().setDispatcherSecret("");
+        var executor = new CloudflareEdgeFunctionExecutor(props, new ObjectMapper());
+
+        var res = executor.invoke(new EdgeFunctionInvocationRequest(
+                "req-1", "app1", "hello", "deployment-1", "GET", "", null, Map.of(), new byte[0], Map.of()));
+
+        assertThat(res.statusCode()).isEqualTo(502);
+        assertThat(res.errorCode()).isEqualTo("CLOUDFLARE_EXECUTOR_ERROR");
     }
 
     @Test

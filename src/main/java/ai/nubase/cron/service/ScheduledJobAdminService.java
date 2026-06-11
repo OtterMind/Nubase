@@ -94,7 +94,24 @@ public class ScheduledJobAdminService {
         // Re-anchor the schedule on any change; a job re-enabled after a long pause
         // must not immediately fire for a long-past occurrence.
         job.setNextRunAt(CronExpressions.next(job.getCronExpression(), Instant.now()));
-        return jobRepository.save(job);
+        job.setUpdatedAt(Instant.now());
+        jobRepository.updateAdminFields(
+                job.getId(),
+                job.getDescription(),
+                job.getCronExpression(),
+                job.getTargetType(),
+                job.getFunctionSlug(),
+                job.getHttpMethod(),
+                job.getRequestPath(),
+                job.getRequestBody(),
+                job.getDbFunctionName(),
+                job.getDbFunctionArgs(),
+                job.getTimeoutSeconds(),
+                job.getEnabled(),
+                job.getNextRunAt(),
+                job.getUpdatedAt()
+        );
+        return job;
     }
 
     @Transactional("metadataTransactionManager")

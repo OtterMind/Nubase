@@ -32,7 +32,7 @@ hs_err_pid*
 .settings/
 
 # Maven
-target/
+/target/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup

@@ -10,7 +10,9 @@ import okhttp3.ResponseBody;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,6 +48,17 @@ public abstract class AbstractHttpEdgeFunctionExecutor implements EdgeFunctionEx
             }
             return client;
         }
+    }
+
+    protected OkHttpClient httpClient(Integer timeoutSeconds) {
+        if (timeoutSeconds == null) return httpClient();
+        Duration timeout = Duration.ofSeconds(Math.max(1, timeoutSeconds));
+        return httpClient().newBuilder()
+                .connectTimeout(timeout)
+                .readTimeout(timeout)
+                .writeTimeout(timeout)
+                .callTimeout(timeout.plusMillis(500))
+                .build();
     }
 
     /** Builds {@code <baseUrl>/<projectRef>/<slug><rawSuffix>?<rawQuery>} without re-encoding. */
@@ -94,11 +107,25 @@ public abstract class AbstractHttpEdgeFunctionExecutor implements EdgeFunctionEx
 
     protected byte[] readBody(ResponseBody body) throws IOException {
         if (body == null) return new byte[0];
-        byte[] bytes = body.bytes();
-        if (bytes.length > properties.getMaxResponseBytes()) {
+        long max = Math.max(0, properties.getMaxResponseBytes());
+        long contentLength = body.contentLength();
+        if (contentLength > max) {
             throw new IOException("Function response exceeds max-response-bytes");
         }
-        return bytes;
+        try (InputStream in = body.byteStream();
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            long total = 0;
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                total += read;
+                if (total > max) {
+                    throw new IOException("Function response exceeds max-response-bytes");
+                }
+                out.write(buffer, 0, read);
+            }
+            return out.toByteArray();
+        }
     }
 
     protected Map<String, List<String>> toHeaderMap(Headers headers) {

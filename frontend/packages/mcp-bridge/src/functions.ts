@@ -61,6 +61,23 @@ export function parseFunctionArgs(args: string[]) {
   return { positional, options: out };
 }
 
+// Strict integer flag parsing shared by all CLI namespaces. `Number('600s')`
+// is NaN, which survives a `typeof x === 'number'` filter and serializes to
+// null — the server then silently applies its default. Reject loudly instead.
+export function intOption(
+  options: Record<string, string | boolean>,
+  name: string,
+  { min, max }: { min?: number; max?: number } = {}
+): number | undefined {
+  const value = options[name];
+  if (value === undefined) return undefined;
+  const parsed = typeof value === 'string' && /^-?\d+$/.test(value.trim()) ? Number(value.trim()) : NaN;
+  if (!Number.isSafeInteger(parsed)) throw new Error(`--${name} must be an integer`);
+  if (min !== undefined && parsed < min) throw new Error(`--${name} must be an integer >= ${min}`);
+  if (max !== undefined && parsed > max) throw new Error(`--${name} must be an integer <= ${max}`);
+  return parsed;
+}
+
 async function functionsNew(args: string[]) {
   const { positional } = parseFunctionArgs(args);
   const slug = required(positional[0], 'function name');
@@ -87,17 +104,28 @@ async function functionsDeploy(args: string[], client: NubaseClient) {
   const { positional, options } = parseFunctionArgs(args);
   const slug = required(positional[0], 'function name');
   const dir = path.resolve(String(options.dir || path.join('nubase', 'functions', slug)));
-  const bundle = (await shouldBundle(dir, options)) ? await bundleEntrypoint(dir) : await bundleDirectory(dir);
+  const manifest = await loadFunctionManifest(dir);
+  const entrypoint = typeof manifest.entrypoint === 'string' && manifest.entrypoint.trim()
+    ? manifest.entrypoint.trim()
+    : undefined;
+  const bundle = (await shouldBundle(dir, options, entrypoint))
+    ? await bundleEntrypoint(dir, entrypoint)
+    : await bundleDirectory(dir);
+  const metadata = {
+    name: typeof manifest.name === 'string' && manifest.name.trim() ? manifest.name.trim() : slug,
+    slug,
+    verifyJwt: options['no-verify-jwt'] === true ? false : booleanOption(manifest.verifyJwt),
+    privileged: options.privileged === true ? true : undefined,
+    entrypoint,
+  };
   try {
-    await client.functionsCreate({
-      name: slug,
-      slug,
-      verifyJwt: options['no-verify-jwt'] === true ? false : undefined,
-      privileged: options.privileged === true ? true : undefined,
-    });
+    await client.functionsCreate(metadata);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (!/FUNCTION_EXISTS|409|already exists/i.test(message)) throw err;
+    if (typeof client.functionsUpdate === 'function') {
+      await client.functionsUpdate(metadata);
+    }
   }
   return client.functionsDeploy({
     slug,
@@ -129,7 +157,7 @@ async function functionsLogs(args: string[], client: NubaseClient) {
   const { positional, options } = parseFunctionArgs(args);
   return client.functionsLogs({
     slug: positional[0],
-    limit: typeof options.limit === 'string' ? Number(options.limit) : undefined,
+    limit: intOption(options, 'limit', { min: 1 }),
   });
 }
 
@@ -163,10 +191,13 @@ async function functionsSecrets(args: string[], client: NubaseClient) {
 // TypeScript entrypoints must be compiled before upload — the server deploys raw JS
 // and rejects uncompiled .ts (TYPESCRIPT_REQUIRES_BUNDLE) — so deploy auto-bundles
 // when the directory has an index.ts without a compiled index.js sibling.
-async function shouldBundle(dir: string, options: Record<string, string | boolean>) {
+async function shouldBundle(dir: string, options: Record<string, string | boolean>, entrypoint?: string) {
   if (options.bundle === true) return true;
   if (options['no-bundle'] === true) return false;
-  return (await fileExists(path.join(dir, 'index.ts'))) && !(await fileExists(path.join(dir, 'index.js')));
+  const entry = entrypoint || 'index.ts';
+  if (!entry.toLowerCase().endsWith('.ts')) return false;
+  const compiled = entry.slice(0, -3) + '.js';
+  return (await fileExists(path.join(dir, entry))) && !(await fileExists(path.join(dir, compiled)));
 }
 
 async function bundleDirectory(dir: string) {
@@ -182,8 +213,8 @@ async function bundleDirectory(dir: string) {
   return bundleFiles(entries);
 }
 
-async function bundleEntrypoint(dir: string) {
-  const entrypoint = await findEntrypoint(dir);
+async function bundleEntrypoint(dir: string, configuredEntrypoint?: string) {
+  const entrypoint = await findEntrypoint(dir, configuredEntrypoint);
   const esbuild = await loadEsbuild();
   const result = await esbuild.build({
     entryPoints: [entrypoint],
@@ -211,12 +242,28 @@ function bundleFiles(entries: Array<{ path: string; content: string }>) {
   };
 }
 
-async function findEntrypoint(dir: string) {
-  for (const file of ['index.ts', 'index.js']) {
+async function findEntrypoint(dir: string, configuredEntrypoint?: string) {
+  const candidates = configuredEntrypoint ? [configuredEntrypoint] : ['index.ts', 'index.js'];
+  for (const file of candidates) {
     const full = path.join(dir, file);
     if (await fileExists(full)) return full;
   }
-  throw new Error(`No edge function entrypoint found in ${dir}; expected index.ts or index.js`);
+  throw new Error(`No edge function entrypoint found in ${dir}; expected ${candidates.join(' or ')}`);
+}
+
+async function loadFunctionManifest(dir: string): Promise<Record<string, unknown>> {
+  const manifestPath = path.join(dir, 'nubase-function.json');
+  try {
+    return JSON.parse(await readFile(manifestPath, 'utf8'));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return {};
+    throw new Error(`Invalid nubase-function.json: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function booleanOption(value: unknown) {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 async function fileExists(file: string) {
