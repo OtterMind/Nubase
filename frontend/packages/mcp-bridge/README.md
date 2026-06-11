@@ -238,6 +238,23 @@ The default scaffold uses `index.js` so it can be uploaded directly to Cloudflar
 Use `--bundle` to compile an `index.ts`/`index.js` entrypoint and its import graph into a single Worker module with esbuild.
 Function secrets are set by name and only secret names are returned by list commands.
 
+## Scheduled Jobs (Cron) CLI
+
+Manage project cron jobs that invoke edge functions or database functions on a schedule (`/cron/admin/v1`):
+
+```bash
+nubase_cli cron list
+nubase_cli cron get nightly-cleanup
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli cron create nightly-cleanup --cron "0 3 * * *" --target edge_function --function cleanup --method POST --body '{"a":1}'
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli cron create purge --cron "*/5 * * * *" --target db_function --db-function purge_old_rows --args '{"days":7}'
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli cron update nightly-cleanup --cron "0 4 * * *" --disable
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli cron delete nightly-cleanup
+nubase_cli cron runs nightly-cleanup --limit 50
+nubase_cli cron runs --limit 50
+```
+
+`--args` must be a JSON object; `name` and `--target` are immutable after create. Writes require `NUBASE_ALLOW_ADMIN_WRITE=true`.
+
 ## Publish
 
 ```bash

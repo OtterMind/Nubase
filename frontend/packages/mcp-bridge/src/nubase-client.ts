@@ -281,6 +281,65 @@ export class NubaseClient {
     });
   }
 
+  // --- Scheduled jobs control plane (/cron/admin/v1) ----------------------
+
+  cronListJobs() {
+    return this.request('/cron/admin/v1/jobs');
+  }
+
+  cronGetJob(args: Record<string, unknown>) {
+    const name = requiredString(args.name, 'name');
+    return this.request(`/cron/admin/v1/jobs/${encodeURIComponent(name)}`);
+  }
+
+  cronCreateJob(args: Record<string, unknown>) {
+    const name = requiredString(args.name, 'name');
+    const cronExpression = requiredString(args.cronExpression, 'cronExpression');
+    const targetType = requiredString(args.targetType, 'targetType');
+    return this.guardedWrite('create scheduled job', () =>
+      this.request('/cron/admin/v1/jobs', {
+        method: 'POST',
+        body: {
+          name,
+          cronExpression,
+          targetType,
+          ...cronJobOptionalFields(args),
+        },
+      })
+    );
+  }
+
+  cronUpdateJob(args: Record<string, unknown>) {
+    const name = requiredString(args.name, 'name');
+    return this.guardedWrite('update scheduled job', () =>
+      this.request(`/cron/admin/v1/jobs/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        body: {
+          cronExpression: typeof args.cronExpression === 'string' ? args.cronExpression : undefined,
+          ...cronJobOptionalFields(args),
+        },
+      })
+    );
+  }
+
+  cronDeleteJob(args: Record<string, unknown>) {
+    const name = requiredString(args.name, 'name');
+    return this.guardedWrite('delete scheduled job', () =>
+      this.request(`/cron/admin/v1/jobs/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    );
+  }
+
+  cronJobRuns(args: Record<string, unknown>) {
+    const name = requiredString(args.name, 'name');
+    const query = buildQuery({ limit: args.limit });
+    return this.request(`/cron/admin/v1/jobs/${encodeURIComponent(name)}/runs${query}`);
+  }
+
+  cronRuns(args: Record<string, unknown> = {}) {
+    const query = buildQuery({ limit: args.limit });
+    return this.request(`/cron/admin/v1/runs${query}`);
+  }
+
   // --- Project API keys ---------------------------------------------------
   // The two project keys an app needs: the anon/authenticated key for browser
   // and client code, and the service_role key for trusted server-side code.
@@ -485,6 +544,26 @@ function buildQuery(params: Record<string, unknown>) {
   }
   const query = search.toString();
   return query ? `?${query}` : '';
+}
+
+// Shared optional fields for cron job create/update payloads. dbFunctionArgs
+// must be a JSON object (the API contract), so anything else is dropped here —
+// callers validate and error before reaching this point.
+function cronJobOptionalFields(args: Record<string, unknown>) {
+  return {
+    description: typeof args.description === 'string' ? args.description : undefined,
+    functionSlug: typeof args.functionSlug === 'string' ? args.functionSlug : undefined,
+    httpMethod: typeof args.httpMethod === 'string' ? args.httpMethod : undefined,
+    requestPath: typeof args.requestPath === 'string' ? args.requestPath : undefined,
+    requestBody: typeof args.requestBody === 'string' ? args.requestBody : undefined,
+    dbFunctionName: typeof args.dbFunctionName === 'string' ? args.dbFunctionName : undefined,
+    dbFunctionArgs:
+      args.dbFunctionArgs && typeof args.dbFunctionArgs === 'object' && !Array.isArray(args.dbFunctionArgs)
+        ? args.dbFunctionArgs
+        : undefined,
+    timeoutSeconds: typeof args.timeoutSeconds === 'number' ? args.timeoutSeconds : undefined,
+    enabled: typeof args.enabled === 'boolean' ? args.enabled : undefined,
+  };
 }
 
 function requiredString(value: unknown, name: string) {

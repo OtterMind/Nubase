@@ -3,6 +3,7 @@ import { defaultConfigPath } from './auth-config.js';
 import { authorize, parseAuthorizeArgs } from './authorize.js';
 import { loadConfigAsync } from './config.js';
 import { installSkills, parseInstallArgs } from './install-skills.js';
+import { runCronCommand } from './cron.js';
 import { resolveExitCode, runFunctionsCommand } from './functions.js';
 import { McpStdioServer } from './mcp-stdio.js';
 import { NubaseClient } from './nubase-client.js';
@@ -51,6 +52,20 @@ const client = new NubaseClient(config);
 if (process.argv[2] === 'functions') {
   try {
     const result = await runFunctionsCommand(process.argv.slice(3), config, client);
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(resolveExitCode(result));
+  } catch (err) {
+    console.error(JSON.stringify({
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    }, null, 2));
+    process.exit(1);
+  }
+}
+
+if (process.argv[2] === 'cron') {
+  try {
+    const result = await runCronCommand(process.argv.slice(3), config, client);
     console.log(JSON.stringify(result, null, 2));
     process.exit(resolveExitCode(result));
   } catch (err) {
