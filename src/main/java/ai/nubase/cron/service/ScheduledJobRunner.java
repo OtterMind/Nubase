@@ -76,15 +76,23 @@ public class ScheduledJobRunner {
                 // holds the lock — either way this instance has nothing to do.
                 continue;
             }
-            submitClaimedJob(job, scheduledFor);
+            // The claim advanced next_run_at to `next` and wrote `lockedUntil`; both
+            // must travel with the run — complete()'s guards compare against the
+            // CLAIMED values, not the pre-claim entity snapshot.
+            submitClaimedJob(new Claim(job, scheduledFor, next, lockedUntil));
         }
     }
 
-    private void submitClaimedJob(ScheduledJob job, Instant scheduledFor) {
+    /** A successfully claimed occurrence: the row state as the claim left it. */
+    private record Claim(ScheduledJob job, Instant scheduledFor, Instant claimedNextRunAt, Instant lockToken) {
+    }
+
+    private void submitClaimedJob(Claim claim) {
+        ScheduledJob job = claim.job();
         try {
             jobExecutor.execute(() -> {
                 try {
-                    runClaimedJob(job, scheduledFor);
+                    runClaimedJob(claim);
                 } catch (Exception e) {
                     log.warn("Scheduled job runner failed after claim: project={}, job={}, error={}",
                             job.getProjectRef(), job.getName(), e.toString());
@@ -93,25 +101,25 @@ public class ScheduledJobRunner {
         } catch (RejectedExecutionException e) {
             log.warn("Scheduled job executor rejected claimed job: project={}, job={}, error={}",
                     job.getProjectRef(), job.getName(), e.toString());
-            recordRejectedJob(job, scheduledFor, e);
+            recordRejectedJob(claim, e);
         }
     }
 
-    private void recordRejectedJob(ScheduledJob job, Instant scheduledFor, Exception e) {
+    private void recordRejectedJob(Claim claim, Exception e) {
+        ScheduledJob job = claim.job();
         try {
             store.recordRun(ScheduledJobRun.builder()
                     .jobId(job.getId())
                     .projectRef(job.getProjectRef())
                     .jobName(job.getName())
                     .targetType(job.getTargetType())
-                    .scheduledFor(scheduledFor)
+                    .scheduledFor(claim.scheduledFor())
                     .startedAt(Instant.now())
                     .finishedAt(Instant.now())
                     .status(ScheduledJobRun.STATUS_FAILED)
                     .errorMessage(truncate("EXECUTOR_REJECTED: " + e, 1000))
                     .build());
-            store.complete(job.getId(), job.getNextRunAt(), ScheduledJobRun.STATUS_FAILED,
-                    CronExpressions.next(job.getCronExpression(), Instant.now()));
+            completeClaim(claim, ScheduledJobRun.STATUS_FAILED);
         } catch (Exception completeError) {
             log.warn("Failed to record rejected scheduled job: job={}, error={}", job.getName(), completeError.toString());
         }
@@ -131,7 +139,8 @@ public class ScheduledJobRunner {
         }
     }
 
-    private void runClaimedJob(ScheduledJob job, Instant scheduledFor) {
+    private void runClaimedJob(Claim claim) {
+        ScheduledJob job = claim.job();
         Instant started = Instant.now();
         RunOutcome outcome;
         try {
@@ -154,7 +163,7 @@ public class ScheduledJobRunner {
                     .projectRef(job.getProjectRef())
                     .jobName(job.getName())
                     .targetType(job.getTargetType())
-                    .scheduledFor(scheduledFor)
+                    .scheduledFor(claim.scheduledFor())
                     .startedAt(started)
                     .finishedAt(Instant.now())
                     .status(status)
@@ -165,17 +174,26 @@ public class ScheduledJobRunner {
             log.warn("Failed to record scheduled job run: job={}, error={}", job.getName(), e.toString());
         }
         try {
-            // Recompute from completion time: occurrences missed while the job was
-            // running coalesce instead of firing back-to-back.
-            boolean completed = store.complete(job.getId(), job.getNextRunAt(), status,
-                    CronExpressions.next(job.getCronExpression(), Instant.now()));
-            if (!completed) {
-                log.info("Skipped completing scheduled job claim because schedule changed while it ran: job={}",
-                        job.getName());
-            }
+            completeClaim(claim, status);
         } catch (Exception e) {
             log.warn("Failed to complete scheduled job claim: job={}, status={}, error={}",
                     job.getName(), status, e.toString());
+        }
+    }
+
+    private void completeClaim(Claim claim, String status) {
+        ScheduledJob job = claim.job();
+        // Recompute from completion time: occurrences missed while the job was
+        // running coalesce instead of firing back-to-back. The guard compares
+        // against the value the claim wrote; a mismatch means an admin re-anchored
+        // the schedule mid-run, in which case we only release the lock and keep
+        // the admin's new next_run_at.
+        boolean completed = store.complete(job.getId(), claim.claimedNextRunAt(), status,
+                CronExpressions.next(job.getCronExpression(), Instant.now()));
+        if (!completed) {
+            boolean released = store.releaseLock(job.getId(), claim.lockToken(), status);
+            log.info("Schedule changed while job ran; preserved the new schedule: job={}, lockReleased={}",
+                    job.getName(), released);
         }
     }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, CloudCog, Play, Plus, RefreshCw, Rocket, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Activity, CloudCog, FileCode, Play, Plus, RefreshCw, Rocket, ShieldCheck, ShieldOff, Upload } from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from '@nubase/ui';
 import { apiFetch, API_BASE, type ApiError } from '@/lib/api';
 import { isProjectReady, useSession } from '@/lib/session';
@@ -56,6 +56,34 @@ interface FunctionSecret {
   updatedAt?: string | null;
 }
 
+interface InvokeResult {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+
+const SAMPLE_SOURCE = `export default {
+  async fetch(req, env) {
+    const url = new URL(req.url);
+    const payload = req.method === 'GET'
+      ? null
+      : await req.json().catch(() => null);
+
+    return Response.json({
+      ok: true,
+      message: 'Hello from Nubase Functions',
+      method: req.method,
+      path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
+      payload,
+      projectRef: env.NUBASE_PROJECT_REF,
+      functionName: env.NUBASE_FUNCTION_NAME,
+      hasApiKeySecret: Boolean(env.API_KEY),
+    });
+  },
+};
+`;
+
 export default function FunctionsPage({ params }: { params: { ref: string } }) {
   const { project } = useSession();
   const projectRef = useProjectRef(params.ref);
@@ -78,6 +106,10 @@ function FunctionsInner({ projectRef }: { projectRef: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ name: '', slug: '', description: '' });
+  const [sourceCode, setSourceCode] = useState(SAMPLE_SOURCE);
+  const [sourceNote, setSourceNote] = useState<string | null>(null);
+  const [invokeDraft, setInvokeDraft] = useState({ method: 'POST', path: '', body: '{\n  "name": "ji"\n}' });
+  const [invokeResult, setInvokeResult] = useState<InvokeResult | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -163,22 +195,74 @@ function FunctionsInner({ projectRef }: { projectRef: string }) {
     }
   }
 
-  async function deployPlaceholder(fn: EdgeFunction) {
+  async function deploySource(fn: EdgeFunction) {
+    if (!sourceCode.trim()) {
+      setError('Function source is required.');
+      return;
+    }
     setBusy(`deploy:${fn.slug}`);
     setError(null);
+    setSourceNote(null);
     try {
+      const bundle = await buildSourceBundle(sourceCode);
       await apiFetch(`/functions/admin/v1/functions/${encodeURIComponent(fn.slug)}/deploy`, {
         method: 'POST',
         apikey,
         authScope: 'tenant',
         body: {
-          sourceHash: `studio-${Date.now().toString(16)}`,
-          artifactType: 'studio_placeholder',
+          sourceHash: bundle.sourceHash,
+          artifactType: 'source_bundle',
+          sourceBundleBase64: bundle.sourceBundleBase64,
         },
       });
+      setSourceNote(`Deployed index.js (${sourceCode.length} chars).`);
       await load();
     } catch (err) {
       setError((err as ApiError).message ?? 'Deploy failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function readSourceFile(file: File | null) {
+    if (!file) return;
+    setError(null);
+    if (!/\.(js|mjs)$/.test(file.name)) {
+      setError('Upload a JavaScript file such as index.js or index.mjs.');
+      return;
+    }
+    const text = await file.text();
+    setSourceCode(text);
+    setSourceNote(`Loaded ${file.name} (${text.length} chars).`);
+  }
+
+  async function invokeFunction(e: React.FormEvent) {
+    e.preventDefault();
+    if (!current) return;
+    setBusy(`invoke:${current.slug}`);
+    setError(null);
+    setInvokeResult(null);
+    try {
+      const path = invokeDraft.path.trim();
+      const suffix = path ? `/${path.replace(/^\/+/, '')}` : '';
+      const method = invokeDraft.method.toUpperCase();
+      const hasBody = !['GET', 'HEAD'].includes(method);
+      const res = await fetch(`${API_BASE}/functions/v1/${encodeURIComponent(current.slug)}${suffix}`, {
+        method,
+        headers: {
+          apikey,
+          ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: hasBody && invokeDraft.body.trim() ? invokeDraft.body : undefined,
+      });
+      setInvokeResult({
+        status: res.status,
+        headers: Object.fromEntries(res.headers.entries()),
+        body: await res.text(),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invoke failed.');
     } finally {
       setBusy(null);
     }
@@ -305,9 +389,9 @@ function FunctionsInner({ projectRef }: { projectRef: string }) {
                       <Play className="h-3.5 w-3.5" />
                       {current.enabled ? 'Disable' : 'Enable'}
                     </Button>
-                    <Button size="sm" onClick={() => deployPlaceholder(current)} disabled={busy === `deploy:${current.slug}`}>
+                    <Button size="sm" onClick={() => deploySource(current)} disabled={busy === `deploy:${current.slug}`}>
                       <Rocket className="h-3.5 w-3.5" />
-                      Deploy marker
+                      Deploy code
                     </Button>
                   </div>
                 </CardHeader>
@@ -324,6 +408,103 @@ function FunctionsInner({ projectRef }: { projectRef: string }) {
                       <div className="mt-2 font-mono text-sm">{current.entrypoint}</div>
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle className="text-base">Source</CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">Deploys the editor as <span className="font-mono">index.js</span>.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => { setSourceCode(SAMPLE_SOURCE); setSourceNote('Sample index.js loaded.'); }}>
+                      <FileCode className="h-3.5 w-3.5" />
+                      Sample
+                    </Button>
+                    <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium hover:bg-accent">
+                      <Upload className="h-3.5 w-3.5" />
+                      Upload
+                      <input
+                        type="file"
+                        accept=".js,.mjs,application/javascript,text/javascript,text/plain"
+                        className="sr-only"
+                        onChange={(e) => { void readSourceFile(e.target.files?.[0] ?? null); e.currentTarget.value = ''; }}
+                      />
+                    </label>
+                    <Button size="sm" onClick={() => deploySource(current)} disabled={busy === `deploy:${current.slug}`}>
+                      <Rocket className="h-3.5 w-3.5" />
+                      Deploy
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <textarea
+                    value={sourceCode}
+                    onChange={(e) => setSourceCode(e.target.value)}
+                    spellCheck={false}
+                    className="h-80 w-full resize-y rounded-md border border-border bg-zinc-950 p-3 font-mono text-xs leading-5 text-zinc-100 outline-none ring-brand/40 placeholder:text-zinc-500 focus:ring-2"
+                  />
+                  {sourceNote ? <p className="mt-2 text-xs text-muted-foreground">{sourceNote}</p> : null}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle className="text-base">Test Invoke</CardTitle>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">POST /functions/v1/{current.slug}</p>
+                  </div>
+                  <Button size="sm" onClick={invokeFunction} disabled={busy === `invoke:${current.slug}`}>
+                    <Play className="h-3.5 w-3.5" />
+                    Run
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={invokeFunction} className="space-y-3">
+                    <div className="grid grid-cols-[120px_1fr] gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="invoke-method" className="text-xs">Method</Label>
+                        <select
+                          id="invoke-method"
+                          value={invokeDraft.method}
+                          onChange={(e) => setInvokeDraft({ ...invokeDraft, method: e.target.value })}
+                          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                        >
+                          {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((method) => <option key={method}>{method}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="invoke-path" className="text-xs">Path and query</Label>
+                        <Input
+                          id="invoke-path"
+                          value={invokeDraft.path}
+                          onChange={(e) => setInvokeDraft({ ...invokeDraft, path: e.target.value })}
+                          placeholder="/demo?x=1"
+                          className="font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="invoke-body" className="text-xs">JSON body</Label>
+                      <textarea
+                        id="invoke-body"
+                        value={invokeDraft.body}
+                        onChange={(e) => setInvokeDraft({ ...invokeDraft, body: e.target.value })}
+                        spellCheck={false}
+                        className="h-28 w-full resize-y rounded-md border border-border bg-background p-3 font-mono text-xs leading-5 outline-none ring-brand/40 focus:ring-2"
+                      />
+                    </div>
+                  </form>
+                  {invokeResult ? (
+                    <div className="mt-3 overflow-hidden rounded-md border border-border">
+                      <div className="flex items-center justify-between border-b border-border bg-muted/60 px-3 py-2 text-xs">
+                        <span>Status</span>
+                        <Badge variant={invokeResult.status < 400 ? 'success' : 'warning'}>{invokeResult.status}</Badge>
+                      </div>
+                      <pre className="max-h-72 overflow-auto bg-background p-3 text-xs">{formatResponseBody(invokeResult.body)}</pre>
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
 
@@ -448,4 +629,42 @@ function Info({ label, value, mono }: { label: string; value: string; mono?: boo
 function formatDate(value?: string | null) {
   if (!value) return '-';
   return new Date(value).toLocaleString();
+}
+
+async function buildSourceBundle(source: string) {
+  const payload = JSON.stringify({
+    files: [{
+      path: 'index.js',
+      content: base64EncodeUtf8(source),
+    }],
+  });
+  return {
+    sourceHash: await sha256Hex(payload),
+    sourceBundleBase64: base64EncodeUtf8(payload),
+  };
+}
+
+function base64EncodeUtf8(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+async function sha256Hex(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function formatResponseBody(body: string) {
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    return body || '(empty response)';
+  }
 }

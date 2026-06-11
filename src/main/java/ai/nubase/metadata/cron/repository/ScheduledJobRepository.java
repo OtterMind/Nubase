@@ -53,6 +53,20 @@ public interface ScheduledJobRepository extends JpaRepository<ScheduledJob, UUID
                  @Param("nextRunAt") Instant nextRunAt);
 
     /**
+     * Fallback when complete()'s schedule guard does not match (an admin re-anchored
+     * the schedule while the run was in flight): release the lock and record the
+     * outcome WITHOUT touching next_run_at, preserving the admin's new schedule. The
+     * lockToken guard (the exact locked_until written at claim) ensures an expired
+     * claim cannot release a lock that a newer claim now holds.
+     */
+    @Modifying
+    @Query("update ScheduledJob j set j.lockedUntil = null, j.lastStatus = :status " +
+            "where j.id = :id and j.lockedUntil = :lockToken")
+    int releaseLock(@Param("id") UUID id,
+                    @Param("lockToken") Instant lockToken,
+                    @Param("status") String status);
+
+    /**
      * Admin edits intentionally update only user-controlled fields. A managed entity
      * save would flush a stale locked_until/next_run_at snapshot and could erase a
      * runner claim taken after the entity was read.
