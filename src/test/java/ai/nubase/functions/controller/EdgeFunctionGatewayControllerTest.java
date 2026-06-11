@@ -2,6 +2,7 @@ package ai.nubase.functions.controller;
 
 import ai.nubase.functions.executor.EdgeFunctionExecutorProperties;
 import ai.nubase.functions.executor.EdgeFunctionInvocationResponse;
+import ai.nubase.functions.service.EdgeFunctionExceptions.EdgeFunctionException;
 import ai.nubase.functions.service.EdgeFunctionInvocationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -23,7 +25,7 @@ import static org.mockito.Mockito.when;
 class EdgeFunctionGatewayControllerTest {
 
     @Test
-    void rejectsOversizedRequestBeforeInvokingFunction() throws Exception {
+    void rejectsOversizedRequestBeforeInvokingFunction() {
         EdgeFunctionInvocationService invocationService = mock(EdgeFunctionInvocationService.class);
         EdgeFunctionExecutorProperties properties = new EdgeFunctionExecutorProperties();
         properties.setMaxRequestBytes(3);
@@ -31,10 +33,13 @@ class EdgeFunctionGatewayControllerTest {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/functions/v1/hello");
         request.setContent("abcd".getBytes(StandardCharsets.UTF_8));
 
-        ResponseEntity<byte[]> response = controller.invoke(request);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE);
-        assertThat(new String(response.getBody(), StandardCharsets.UTF_8)).contains("REQUEST_TOO_LARGE");
+        // Rendered as a 413 by EdgeFunctionExceptionHandler; the controller only throws.
+        assertThatThrownBy(() -> controller.invoke(request))
+                .isInstanceOf(EdgeFunctionException.class)
+                .satisfies(e -> {
+                    assertThat(((EdgeFunctionException) e).status()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE);
+                    assertThat(((EdgeFunctionException) e).code()).isEqualTo("REQUEST_TOO_LARGE");
+                });
         verifyNoInteractions(invocationService);
     }
 

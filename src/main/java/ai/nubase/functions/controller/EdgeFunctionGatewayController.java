@@ -1,65 +1,52 @@
 package ai.nubase.functions.controller;
 
-import ai.nubase.functions.executor.EdgeFunctionInvocationResponse;
+import ai.nubase.common.util.RequestUtil;
 import ai.nubase.functions.executor.EdgeFunctionExecutorProperties;
+import ai.nubase.functions.executor.EdgeFunctionInvocationResponse;
 import ai.nubase.functions.service.EdgeFunctionExceptions.EdgeFunctionException;
 import ai.nubase.functions.service.EdgeFunctionInvocationService;
+import ai.nubase.functions.util.EdgeFunctionHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.HandlerMapping;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 @RestController
 @RequiredArgsConstructor
 @ConditionalOnProperty(value = "nubase.functions.enabled", havingValue = "true", matchIfMissing = true)
 public class EdgeFunctionGatewayController {
 
-    private static final Set<String> RESPONSE_BLOCKED_HEADERS = Set.of(
-            "connection",
-            "keep-alive",
-            "transfer-encoding",
-            "upgrade",
-            "proxy-authenticate",
-            "proxy-authorization"
-    );
-
     private final EdgeFunctionInvocationService invocationService;
     private final EdgeFunctionExecutorProperties properties;
 
+    // EdgeFunctionException is rendered by EdgeFunctionExceptionHandler — no
+    // error-shaping here, so the JSON contract has a single owner.
     @RequestMapping("/functions/v1/{functionSlug}/**")
     public ResponseEntity<byte[]> invoke(HttpServletRequest request) throws IOException {
         String functionSlug = extractFunctionSlug(request);
         String suffix = extractSuffix(request, functionSlug);
-        byte[] body = StreamUtils.copyToByteArray(request.getInputStream());
-        if (body.length > properties.getMaxRequestBytes()) {
-            byte[] error = "{\"code\":\"REQUEST_TOO_LARGE\",\"message\":\"Function request body is too large\"}"
-                    .getBytes(StandardCharsets.UTF_8);
-            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                    .header(HttpHeaders.CONTENT_TYPE, "application/json")
-                    .body(error);
-        }
+        byte[] body = readBody(request);
+        EdgeFunctionInvocationResponse response = invocationService.invoke(functionSlug, suffix, body, request);
+        return toResponseEntity(response);
+    }
+
+    private byte[] readBody(HttpServletRequest request) throws IOException {
         try {
-            EdgeFunctionInvocationResponse response = invocationService.invoke(functionSlug, suffix, body, request);
-            return toResponseEntity(response);
-        } catch (EdgeFunctionException e) {
-            byte[] error = ("{\"code\":\"" + e.code() + "\",\"message\":\"" + escape(e.getMessage()) + "\"}")
-                    .getBytes(StandardCharsets.UTF_8);
-            return ResponseEntity.status(e.status())
-                    .header(HttpHeaders.CONTENT_TYPE, "application/json")
-                    .body(error);
+            // Streams with an early size-limit abort instead of buffering an
+            // arbitrarily large body before checking it.
+            return RequestUtil.readRawRequestBody(request, properties.getMaxRequestBytes());
+        } catch (IllegalArgumentException e) {
+            throw new EdgeFunctionException(HttpStatus.PAYLOAD_TOO_LARGE, "REQUEST_TOO_LARGE", "Function request body is too large");
         }
     }
 
@@ -67,7 +54,7 @@ public class EdgeFunctionGatewayController {
         HttpHeaders headers = new HttpHeaders();
         for (Map.Entry<String, List<String>> entry : response.headers().entrySet()) {
             String lower = entry.getKey().toLowerCase(Locale.ROOT);
-            if (RESPONSE_BLOCKED_HEADERS.contains(lower)) continue;
+            if (EdgeFunctionHeaders.RESPONSE_BLOCKED.contains(lower)) continue;
             headers.put(entry.getKey(), entry.getValue());
         }
         HttpStatus status = HttpStatus.resolve(response.statusCode());
@@ -89,10 +76,5 @@ public class EdgeFunctionGatewayController {
         if (!path.startsWith(prefix)) return "";
         String suffix = path.substring(prefix.length());
         return suffix.startsWith("/") ? suffix : "";
-    }
-
-    private String escape(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

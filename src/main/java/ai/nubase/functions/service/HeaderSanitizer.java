@@ -1,5 +1,6 @@
 package ai.nubase.functions.service;
 
+import ai.nubase.functions.util.EdgeFunctionHeaders;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -10,22 +11,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 @Component
 @ConditionalOnProperty(value = "nubase.functions.enabled", havingValue = "true", matchIfMissing = true)
 public class HeaderSanitizer {
-
-    private static final Set<String> BLOCKED = Set.of(
-            "host",
-            "connection",
-            "keep-alive",
-            "transfer-encoding",
-            "upgrade",
-            "proxy-authenticate",
-            "proxy-authorization",
-            "apikey"
-    );
 
     public Map<String, List<String>> forwardableHeaders(HttpServletRequest request) {
         Map<String, List<String>> headers = new LinkedHashMap<>();
@@ -33,7 +22,7 @@ public class HeaderSanitizer {
         while (names != null && names.hasMoreElements()) {
             String name = names.nextElement();
             String lower = name.toLowerCase(Locale.ROOT);
-            if (BLOCKED.contains(lower)) continue;
+            if (EdgeFunctionHeaders.REQUEST_BLOCKED.contains(lower)) continue;
             List<String> values = new ArrayList<>();
             Enumeration<String> rawValues = request.getHeaders(name);
             while (rawValues.hasMoreElements()) {

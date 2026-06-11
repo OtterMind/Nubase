@@ -41,7 +41,10 @@ Deploy it:
 NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions deploy hello
 ```
 
-Deploy a bundled `index.ts`/`index.js` entrypoint with esbuild:
+TypeScript entrypoints (`index.ts`) are bundled with esbuild automatically; pass
+`--bundle` to force bundling for plain-JS import graphs, or `--no-bundle` to upload
+the directory as-is (the server rejects uncompiled TypeScript with
+`TYPESCRIPT_REQUIRES_BUNDLE`):
 
 ```bash
 NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions deploy hello --bundle
@@ -122,6 +125,6 @@ Set `NUBASE_FUNCTIONS_CLOUDFLARE_DISPATCHER_URL` to the deployed dispatcher URL 
 
 ## Current Limitations
 
-- Default deploy uploads the function directory as-is. Use `--bundle` for TypeScript and import graphs that esbuild can resolve.
+- Default deploy uploads the function directory as-is, except TypeScript entrypoints which are esbuild-bundled automatically. Use `--bundle` for plain-JS import graphs that need resolving.
 - Cloudflare Workers for Platforms script upload is handled synchronously. Nubase records each deploy attempt as a version and retries transient `429` and `5xx` upload responses.
 - Invocation log retention is implemented; table partitioning is not.

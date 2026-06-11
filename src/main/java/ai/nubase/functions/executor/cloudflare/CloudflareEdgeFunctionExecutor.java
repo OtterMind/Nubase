@@ -1,37 +1,30 @@
 package ai.nubase.functions.executor.cloudflare;
 
+import ai.nubase.functions.executor.AbstractHttpEdgeFunctionExecutor;
 import ai.nubase.functions.executor.EdgeFunctionDeploymentRequest;
 import ai.nubase.functions.executor.EdgeFunctionDeploymentResponse;
-import ai.nubase.functions.executor.EdgeFunctionExecutor;
 import ai.nubase.functions.executor.EdgeFunctionExecutorProperties;
 import ai.nubase.functions.executor.EdgeFunctionInvocationRequest;
 import ai.nubase.functions.executor.EdgeFunctionInvocationResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.Headers;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
-import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
-import okhttp3.ResponseBody;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Duration;
 import java.util.Base64;
 import java.time.Instant;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -39,17 +32,19 @@ import java.util.Map;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @ConditionalOnProperty(value = "nubase.functions.enabled", havingValue = "true", matchIfMissing = true)
-public class CloudflareEdgeFunctionExecutor implements EdgeFunctionExecutor {
+public class CloudflareEdgeFunctionExecutor extends AbstractHttpEdgeFunctionExecutor {
 
     // Bound as plain_text at deploy time; user secrets must not collide with them.
     private static final java.util.Set<String> RESERVED_ENV_NAMES =
             java.util.Set.of("NUBASE_PROJECT_REF", "NUBASE_FUNCTION_NAME");
 
-    private final EdgeFunctionExecutorProperties properties;
     private final ObjectMapper objectMapper;
-    private volatile OkHttpClient client;
+
+    public CloudflareEdgeFunctionExecutor(EdgeFunctionExecutorProperties properties, ObjectMapper objectMapper) {
+        super(properties);
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public String provider() {
@@ -100,14 +95,11 @@ public class CloudflareEdgeFunctionExecutor implements EdgeFunctionExecutor {
         byte[] body = request.body() == null ? new byte[0] : request.body();
         String timestamp = String.valueOf(Instant.now().getEpochSecond());
         String signature = sign(request, body, timestamp);
-        String url = buildUrl(request);
+        String url = buildUrl(properties.getCloudflare().getDispatcherUrl(), request);
 
         RequestBody requestBody = buildRequestBody(request, body);
         Request.Builder builder = new Request.Builder().url(url).method(request.method(), requestBody);
-        request.headers().forEach((name, values) -> {
-            if (!shouldForwardHeader(name)) return;
-            values.forEach(value -> builder.addHeader(name, value));
-        });
+        copyForwardableHeaders(request, builder);
         builder.header("x-nubase-request-id", request.requestId());
         builder.header("x-nubase-project-ref", request.projectRef());
         builder.header("x-nubase-function-slug", request.functionSlug());
@@ -339,28 +331,6 @@ public class CloudflareEdgeFunctionExecutor implements EdgeFunctionExecutor {
         }
     }
 
-    private String buildUrl(EdgeFunctionInvocationRequest request) {
-        UriComponentsBuilder builder = UriComponentsBuilder
-                .fromHttpUrl(properties.getCloudflare().getDispatcherUrl())
-                .pathSegment(request.projectRef(), request.functionSlug());
-        if (StringUtils.hasText(request.path())) {
-            String path = request.path().startsWith("/") ? request.path().substring(1) : request.path();
-            if (!path.isBlank()) builder.path("/").path(path);
-        }
-        if (StringUtils.hasText(request.queryString())) {
-            builder.query(request.queryString());
-        }
-        return builder.build(true).toUriString();
-    }
-
-    private RequestBody buildRequestBody(EdgeFunctionInvocationRequest request, byte[] body) {
-        String method = request.method().toUpperCase(Locale.ROOT);
-        if (method.equals("GET") || method.equals("HEAD")) return null;
-        String contentType = firstHeader(request.headers(), "content-type");
-        MediaType mediaType = contentType == null ? null : MediaType.parse(contentType);
-        return RequestBody.create(body, mediaType);
-    }
-
     // Signed payload lines (must match worker.js verifySignature): requestId, projectRef,
     // functionSlug, deploymentId, METHOD, rawPathSuffix, rawQuery, timestamp, sha256Hex(body).
     // deploymentId is included so the routing header cannot be swapped to another
@@ -401,58 +371,4 @@ public class CloudflareEdgeFunctionExecutor implements EdgeFunctionExecutor {
         }
     }
 
-    private String firstHeader(Map<String, List<String>> headers, String expected) {
-        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
-            if (entry.getKey().equalsIgnoreCase(expected) && !entry.getValue().isEmpty()) {
-                return entry.getValue().get(0);
-            }
-        }
-        return null;
-    }
-
-    private boolean shouldForwardHeader(String name) {
-        String lower = name.toLowerCase(Locale.ROOT);
-        return !lower.equals("host")
-                && !lower.equals("connection")
-                && !lower.equals("keep-alive")
-                && !lower.equals("transfer-encoding")
-                && !lower.equals("upgrade")
-                && !lower.equals("proxy-authenticate")
-                && !lower.equals("proxy-authorization")
-                && !lower.equals("apikey");
-    }
-
-    private byte[] readBody(ResponseBody body) throws IOException {
-        if (body == null) return new byte[0];
-        byte[] bytes = body.bytes();
-        if (bytes.length > properties.getMaxResponseBytes()) {
-            throw new IOException("Function response exceeds max-response-bytes");
-        }
-        return bytes;
-    }
-
-    private Map<String, List<String>> toHeaderMap(Headers headers) {
-        Map<String, List<String>> map = new LinkedHashMap<>();
-        for (String name : headers.names()) {
-            map.put(name, headers.values(name));
-        }
-        return map;
-    }
-
-    private OkHttpClient httpClient() {
-        OkHttpClient existing = client;
-        if (existing != null) return existing;
-        synchronized (this) {
-            if (client == null) {
-                Duration timeout = Duration.ofMillis(Math.max(1, properties.getTimeoutMs()));
-                client = new OkHttpClient.Builder()
-                        .connectTimeout(timeout)
-                        .readTimeout(timeout)
-                        .writeTimeout(timeout)
-                        .callTimeout(timeout.plusMillis(500))
-                        .build();
-            }
-            return client;
-        }
-    }
 }
