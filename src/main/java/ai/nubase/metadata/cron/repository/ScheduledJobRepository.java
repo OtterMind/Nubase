@@ -67,40 +67,9 @@ public interface ScheduledJobRepository extends JpaRepository<ScheduledJob, UUID
                     @Param("status") String status);
 
     /**
-     * Admin edits intentionally update only user-controlled fields. A managed entity
-     * save would flush a stale locked_until/next_run_at snapshot and could erase a
-     * runner claim taken after the entity was read.
+     * Lock-validity probe for dequeued work: a claim that waited in the executor
+     * queue past its own locked_until may have been superseded by a newer claim,
+     * in which case the queued run must not execute.
      */
-    @Modifying
-    @Query("""
-            update ScheduledJob j set
-                j.description = :description,
-                j.cronExpression = :cronExpression,
-                j.targetType = :targetType,
-                j.functionSlug = :functionSlug,
-                j.httpMethod = :httpMethod,
-                j.requestPath = :requestPath,
-                j.requestBody = :requestBody,
-                j.dbFunctionName = :dbFunctionName,
-                j.dbFunctionArgs = :dbFunctionArgs,
-                j.timeoutSeconds = :timeoutSeconds,
-                j.enabled = :enabled,
-                j.nextRunAt = :nextRunAt,
-                j.updatedAt = :updatedAt
-            where j.id = :id
-            """)
-    int updateAdminFields(@Param("id") UUID id,
-                          @Param("description") String description,
-                          @Param("cronExpression") String cronExpression,
-                          @Param("targetType") String targetType,
-                          @Param("functionSlug") String functionSlug,
-                          @Param("httpMethod") String httpMethod,
-                          @Param("requestPath") String requestPath,
-                          @Param("requestBody") String requestBody,
-                          @Param("dbFunctionName") String dbFunctionName,
-                          @Param("dbFunctionArgs") String dbFunctionArgs,
-                          @Param("timeoutSeconds") Integer timeoutSeconds,
-                          @Param("enabled") Boolean enabled,
-                          @Param("nextRunAt") Instant nextRunAt,
-                          @Param("updatedAt") Instant updatedAt);
+    boolean existsByIdAndLockedUntil(UUID id, Instant lockedUntil);
 }

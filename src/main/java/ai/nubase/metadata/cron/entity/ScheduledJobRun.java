@@ -25,6 +25,8 @@ public class ScheduledJobRun {
 
     public static final String STATUS_SUCCESS = "success";
     public static final String STATUS_FAILED = "failed";
+    /** Claimed but not executed (e.g. the claim expired while queued). */
+    public static final String STATUS_SKIPPED = "skipped";
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

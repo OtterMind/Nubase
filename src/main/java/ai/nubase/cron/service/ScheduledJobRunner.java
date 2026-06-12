@@ -107,6 +107,9 @@ public class ScheduledJobRunner {
 
     private void recordRejectedJob(Claim claim, Exception e) {
         ScheduledJob job = claim.job();
+        // recordRun and completeClaim fail independently (recordRun is REQUIRES_NEW
+        // and needs a fresh metadata connection); a failed history write must never
+        // leave the claim lock held — same isolation as runClaimedJob.
         try {
             store.recordRun(ScheduledJobRun.builder()
                     .jobId(job.getId())
@@ -119,9 +122,13 @@ public class ScheduledJobRunner {
                     .status(ScheduledJobRun.STATUS_FAILED)
                     .errorMessage(truncate("EXECUTOR_REJECTED: " + e, 1000))
                     .build());
+        } catch (Exception recordError) {
+            log.warn("Failed to record rejected scheduled job run: job={}, error={}", job.getName(), recordError.toString());
+        }
+        try {
             completeClaim(claim, ScheduledJobRun.STATUS_FAILED);
         } catch (Exception completeError) {
-            log.warn("Failed to record rejected scheduled job: job={}, error={}", job.getName(), completeError.toString());
+            log.warn("Failed to release rejected scheduled job claim: job={}, error={}", job.getName(), completeError.toString());
         }
     }
 
@@ -141,6 +148,21 @@ public class ScheduledJobRunner {
 
     private void runClaimedJob(Claim claim) {
         ScheduledJob job = claim.job();
+        // The claim may have waited in the executor queue past its own locked_until,
+        // in which case another instance has legitimately re-claimed the job. Running
+        // anyway would overlap with the newer run — the exact guarantee the lock
+        // exists to provide — so verify the lock is still ours before executing.
+        try {
+            if (!store.isLockHeld(job.getId(), claim.lockToken())) {
+                log.warn("Scheduled job claim expired while queued; skipping execution: project={}, job={}",
+                        job.getProjectRef(), job.getName());
+                recordSkippedRun(claim);
+                return;
+            }
+        } catch (Exception e) {
+            log.warn("Could not verify scheduled job lock before execution; proceeding: job={}, error={}",
+                    job.getName(), e.toString());
+        }
         Instant started = Instant.now();
         RunOutcome outcome;
         try {
@@ -178,6 +200,28 @@ public class ScheduledJobRunner {
         } catch (Exception e) {
             log.warn("Failed to complete scheduled job claim: job={}, status={}, error={}",
                     job.getName(), status, e.toString());
+        }
+    }
+
+    // The lock belongs to a newer claim, so completeClaim must not run (it would
+    // release someone else's lock or clobber their schedule); only the history row
+    // is written.
+    private void recordSkippedRun(Claim claim) {
+        ScheduledJob job = claim.job();
+        try {
+            store.recordRun(ScheduledJobRun.builder()
+                    .jobId(job.getId())
+                    .projectRef(job.getProjectRef())
+                    .jobName(job.getName())
+                    .targetType(job.getTargetType())
+                    .scheduledFor(claim.scheduledFor())
+                    .startedAt(Instant.now())
+                    .finishedAt(Instant.now())
+                    .status(ScheduledJobRun.STATUS_SKIPPED)
+                    .errorMessage("QUEUE_WAIT_EXCEEDED_LOCK: claim expired before execution started")
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to record skipped scheduled job run: job={}, error={}", job.getName(), e.toString());
         }
     }
 

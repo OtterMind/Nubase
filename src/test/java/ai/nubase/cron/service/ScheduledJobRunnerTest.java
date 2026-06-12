@@ -48,6 +48,45 @@ class ScheduledJobRunnerTest {
             return action.call();
         });
         lenient().when(store.complete(any(), any(), any(), any())).thenReturn(true);
+        lenient().when(store.isLockHeld(any(), any())).thenReturn(true);
+    }
+
+    @Test
+    void queuedClaimWhoseLockExpiredIsSkippedWithoutExecuting() throws Exception {
+        ScheduledJob job = dueJob();
+        when(store.findDue(any(), anyInt())).thenReturn(List.of(job));
+        when(store.claim(any(), any(), any(), any(), any())).thenReturn(true);
+        // Another instance re-claimed while this claim sat in the executor queue.
+        when(store.isLockHeld(eq(job.getId()), any())).thenReturn(false);
+
+        runner.tick();
+
+        verify(target, never()).execute(any());
+        ArgumentCaptor<ScheduledJobRun> runCaptor = ArgumentCaptor.forClass(ScheduledJobRun.class);
+        verify(store).recordRun(runCaptor.capture());
+        assertThat(runCaptor.getValue().getStatus()).isEqualTo(ScheduledJobRun.STATUS_SKIPPED);
+        // The lock belongs to the newer claim — this run must not complete/release it.
+        verify(store, never()).complete(any(), any(), any(), any());
+        verify(store, never()).releaseLock(any(), any(), any());
+    }
+
+    @Test
+    void rejectedExecutionReleasesClaimEvenWhenHistoryWriteFails() throws Exception {
+        ScheduledJob job = dueJob();
+        ScheduledJobRunner rejectingRunner = new ScheduledJobRunner(
+                store, new CronProperties(), tenantContext,
+                command -> { throw new java.util.concurrent.RejectedExecutionException("queue full"); },
+                List.of(target));
+        when(store.findDue(any(), anyInt())).thenReturn(List.of(job));
+        when(store.claim(any(), any(), any(), any(), any())).thenReturn(true);
+        org.mockito.Mockito.doThrow(new RuntimeException("metadata pool exhausted"))
+                .when(store).recordRun(any());
+
+        rejectingRunner.tick();
+
+        // History write failed, but the claim must still be completed/released —
+        // otherwise the job stays locked for the full lock duration with nothing running.
+        verify(store).complete(eq(job.getId()), any(), eq(ScheduledJobRun.STATUS_FAILED), any());
     }
 
     @Test

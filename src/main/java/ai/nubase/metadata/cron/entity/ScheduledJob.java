@@ -21,6 +21,12 @@ import java.util.UUID;
 
 @Data
 @Builder
+// Dirty-checked updates write ONLY modified columns. This is load-bearing for
+// concurrency, not an optimization: the admin path loads + mutates + saves this
+// entity, and a full-column UPDATE would write back its load-time snapshot of the
+// runner-owned columns (locked_until, last_run_at, last_status), erasing a claim
+// taken by a runner instance between the SELECT and the flush.
+@org.hibernate.annotations.DynamicUpdate
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
