@@ -1,0 +1,287 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#eef1fd"/>
+      <stop offset="1" stop-color="#e0e7fb"/>
+    </linearGradient>
+    <linearGradient id="pillPurple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="pillBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="arrowPurple" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#c4b0fb"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="arrowBlue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7eb0fb"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="cliff" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8e1f7"/>
+      <stop offset="1" stop-color="#b4c6ec"/>
+    </linearGradient>
+    <radialGradient id="mist" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#4a5a9a" flood-opacity="0.12"/>
+    </filter>
+    <filter id="card" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#3b4a86" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+
+  <!-- clouds -->
+  <g fill="#ffffff" opacity="0.55">
+    <ellipse cx="636" cy="120" rx="46" ry="15"/>
+    <ellipse cx="676" cy="126" rx="34" ry="12"/>
+    <ellipse cx="884" cy="110" rx="44" ry="14"/>
+    <ellipse cx="846" cy="116" rx="30" ry="11"/>
+  </g>
+
+  <!-- ===================== CENTER: cliffs + bridge ===================== -->
+  <ellipse cx="752" cy="585" rx="200" ry="70" fill="url(#mist)"/>
+  <!-- left cliff -->
+  <path d="M512,478 L648,478 L648,504 L614,566 L658,642 L590,748 L520,694 L500,566 Z" fill="url(#cliff)"/>
+  <!-- right cliff -->
+  <path d="M992,478 L856,478 L856,504 L890,566 L846,642 L914,748 L984,694 L1004,566 Z" fill="url(#cliff)"/>
+  <!-- cliff top highlights -->
+  <path d="M512,478 L648,478 L648,492 L512,492 Z" fill="#e6ecfa" opacity="0.7"/>
+  <path d="M992,478 L856,478 L856,492 L992,492 Z" fill="#e6ecfa" opacity="0.7"/>
+
+  <!-- bridge -->
+  <g>
+    <!-- main cables -->
+    <path d="M556,474 Q600,404 648,398 Q752,452 856,398 Q900,404 948,474" fill="none" stroke="#3f63c2" stroke-width="3.5" stroke-linecap="round"/>
+    <!-- suspenders -->
+    <g stroke="#6f8fd8" stroke-width="1.6">
+      <line x1="680" y1="474" x2="680" y2="426"/>
+      <line x1="712" y1="474" x2="712" y2="444"/>
+      <line x1="752" y1="474" x2="752" y2="452"/>
+      <line x1="792" y1="474" x2="792" y2="444"/>
+      <line x1="824" y1="474" x2="824" y2="426"/>
+      <line x1="592" y1="474" x2="592" y2="430"/>
+      <line x1="620" y1="474" x2="620" y2="410"/>
+      <line x1="884" y1="474" x2="884" y2="430"/>
+      <line x1="912" y1="474" x2="912" y2="410"/>
+    </g>
+    <!-- towers -->
+    <rect x="645" y="394" width="6" height="96" rx="2" fill="#3f63c2"/>
+    <rect x="853" y="394" width="6" height="96" rx="2" fill="#3f63c2"/>
+    <!-- deck -->
+    <rect x="554" y="472" width="396" height="9" rx="3" fill="#4f74cf"/>
+    <rect x="554" y="472" width="396" height="3" rx="1.5" fill="#7d9be0"/>
+  </g>
+
+  <!-- arrows in/out -->
+  <g transform="translate(506,320)"><path d="M0,14 H30 V6 L54,24 L30,42 V34 H0 Z" fill="url(#arrowPurple)"/></g>
+  <g transform="translate(936,320)"><path d="M0,14 H30 V6 L54,24 L30,42 V34 H0 Z" fill="url(#arrowBlue)"/></g>
+
+  <!-- checklist card -->
+  <g filter="url(#card)">
+    <rect x="636" y="184" width="234" height="150" rx="16" fill="#ffffff" stroke="#cfd3ee" stroke-width="2" stroke-dasharray="7 6"/>
+  </g>
+  <g>
+    <circle cx="672" cy="224" r="8" fill="#f87171"/>
+    <rect x="692" y="220" width="118" height="7" rx="3.5" fill="#f6acac"/>
+    <path d="M832,217 l12,12 M844,217 l-12,12" stroke="#ef4444" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="672" cy="262" r="8" fill="#f87171"/>
+    <rect x="692" y="258" width="118" height="7" rx="3.5" fill="#f6acac"/>
+    <path d="M832,255 l12,12 M844,255 l-12,12" stroke="#ef4444" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="672" cy="300" r="8" fill="#34d399"/>
+    <rect x="692" y="296" width="118" height="7" rx="3.5" fill="#a7e8cf"/>
+    <path d="M830,300 l8,8 l14,-16" fill="none" stroke="#10b981" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- ===================== LEFT PANEL ===================== -->
+  <g filter="url(#soft)">
+    <rect x="56" y="34" width="446" height="720" rx="30" fill="#f7f7fe" stroke="#e7e7f4" stroke-width="1.5"/>
+  </g>
+  <!-- header pill -->
+  <rect x="150" y="8" width="258" height="50" rx="25" fill="url(#pillPurple)"/>
+  <text x="279" y="34" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">AI-Generated Demo</text>
+
+  <!-- item 1: UI prototype -->
+  <g filter="url(#card)">
+    <rect x="96" y="92" width="232" height="146" rx="12" fill="#ffffff" stroke="#e9e9f5"/>
+  </g>
+  <g fill="#cdd0ee"><circle cx="118" cy="114" r="5"/><circle cx="136" cy="114" r="5"/><circle cx="154" cy="114" r="5"/></g>
+  <line x1="96" y1="128" x2="328" y2="128" stroke="#eeeef8"/>
+  <rect x="112" y="142" width="74" height="58" rx="6" fill="#d9d6f5"/>
+  <rect x="198" y="146" width="116" height="9" rx="4.5" fill="#e6e3f9"/>
+  <rect x="198" y="164" width="92" height="9" rx="4.5" fill="#e6e3f9"/>
+  <rect x="198" y="182" width="104" height="9" rx="4.5" fill="#e6e3f9"/>
+  <g fill="#ded9f6"><rect x="112" y="210" width="24" height="20" rx="4"/><rect x="146" y="210" width="24" height="20" rx="4"/><rect x="180" y="210" width="24" height="20" rx="4"/><rect x="214" y="210" width="24" height="20" rx="4"/></g>
+  <text x="352" y="166" font-size="22" font-weight="600" fill="#4b4b6b" dominant-baseline="middle">UI Prototype</text>
+  <line x1="96" y1="254" x2="476" y2="254" stroke="#dcdcec" stroke-dasharray="5 6"/>
+
+  <!-- item 2: Button -->
+  <rect x="112" y="276" width="150" height="56" rx="12" fill="url(#pillPurple)"/>
+  <text x="187" y="305" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">Button</text>
+  <text x="352" y="305" font-size="22" font-weight="600" fill="#4b4b6b" dominant-baseline="middle">Button</text>
+  <line x1="96" y1="352" x2="476" y2="352" stroke="#dcdcec" stroke-dasharray="5 6"/>
+
+  <!-- item 3: Mock Data -->
+  <g filter="url(#card)">
+    <rect x="96" y="374" width="232" height="128" rx="12" fill="#f1f0fc" stroke="#e3e1f5"/>
+  </g>
+  <g font-family="'Menlo','SF Mono',monospace" font-size="15" fill="#6c6a93">
+    <text x="116" y="398">{</text>
+    <text x="132" y="420">"id": 1,</text>
+    <text x="132" y="442">"name": "Demo",</text>
+    <text x="132" y="464">"value": 123</text>
+    <text x="116" y="486">}</text>
+  </g>
+  <text x="352" y="438" font-size="22" font-weight="600" fill="#4b4b6b" dominant-baseline="middle">Mock Data</text>
+  <line x1="96" y1="518" x2="476" y2="518" stroke="#dcdcec" stroke-dasharray="5 6"/>
+
+  <!-- item 4: Local State -->
+  <g filter="url(#card)">
+    <rect x="96" y="540" width="232" height="150" rx="12" fill="#f1f0fc" stroke="#e3e1f5"/>
+  </g>
+  <!-- mini db cylinder -->
+  <g transform="translate(140,600)">
+    <ellipse cx="0" cy="-16" rx="18" ry="6" fill="#a99af0"/>
+    <path d="M-18,-16 V18 a18,6 0 0 0 36,0 V-16" fill="#8b5cf6"/>
+    <ellipse cx="0" cy="-16" rx="18" ry="6" fill="#b3a6f4"/>
+    <path d="M-18,0 a18,6 0 0 0 36,0" fill="none" stroke="#a99af0" stroke-width="2"/>
+  </g>
+  <g font-family="'Menlo','SF Mono',monospace" font-size="14" fill="#6c6a93">
+    <text x="186" y="572">{</text>
+    <text x="202" y="592">count: 1,</text>
+    <text x="202" y="612">list: [..],</text>
+    <text x="202" y="632">...</text>
+    <text x="186" y="652">}</text>
+  </g>
+  <text x="352" y="615" font-size="22" font-weight="600" fill="#4b4b6b" dominant-baseline="middle">Local State</text>
+
+  <!-- ===================== RIGHT PANEL ===================== -->
+  <g filter="url(#soft)">
+    <rect x="1004" y="34" width="544" height="720" rx="30" fill="#f7f7fe" stroke="#e7e7f4" stroke-width="1.5"/>
+  </g>
+  <rect x="1156" y="8" width="240" height="50" rx="25" fill="url(#pillBlue)"/>
+  <text x="1276" y="34" font-size="21" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">Real, Live App</text>
+
+  <!-- module cards -->
+  <g>
+    <!-- row backgrounds -->
+    <g filter="url(#card)" fill="#ffffff" stroke="#ececf6">
+      <rect x="1032" y="92"  width="149" height="160" rx="22"/>
+      <rect x="1201" y="92"  width="149" height="160" rx="22"/>
+      <rect x="1370" y="92"  width="149" height="160" rx="22"/>
+      <rect x="1032" y="282" width="149" height="160" rx="22"/>
+      <rect x="1201" y="282" width="149" height="160" rx="22"/>
+      <rect x="1370" y="282" width="149" height="160" rx="22"/>
+      <rect x="1032" y="472" width="149" height="160" rx="22"/>
+      <rect x="1201" y="472" width="149" height="160" rx="22"/>
+      <rect x="1370" y="472" width="149" height="160" rx="22"/>
+    </g>
+
+    <!-- icons (blue) -->
+    <!-- Database -->
+    <g transform="translate(1107,150)">
+      <ellipse cx="0" cy="-15" rx="17" ry="6.5" fill="#6f9cf4"/>
+      <path d="M-17,-15 V15 a17,6.5 0 0 0 34,0 V-15" fill="#3b82f6"/>
+      <ellipse cx="0" cy="-15" rx="17" ry="6.5" fill="#79a3f5"/>
+      <path d="M-17,0 a17,6.5 0 0 0 34,0" fill="none" stroke="#9cbcf8" stroke-width="2"/>
+    </g>
+    <text x="1107" y="220" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Database</text>
+    <!-- Auth -->
+    <g transform="translate(1276,150)">
+      <path d="M0,-20 L17,-13 V2 C17,13 9,19 0,23 C-9,19 -17,13 -17,2 V-13 Z" fill="#3b82f6"/>
+      <circle cx="0" cy="-3" r="5" fill="#ffffff"/>
+      <path d="M-8,12 C-8,3 8,3 8,12 Z" fill="#ffffff"/>
+    </g>
+    <text x="1276" y="220" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Auth</text>
+    <!-- Storage (folder) -->
+    <g transform="translate(1445,150)">
+      <path d="M-18,-11 h11 l4,5 h18 a3,3 0 0 1 3,3 v15 a3,3 0 0 1 -3,3 h-33 a3,3 0 0 1 -3,-3 v-20 a3,3 0 0 1 3,-3 z" fill="#3b82f6"/>
+      <path d="M-21,-3 h42 v3 H-21 z" fill="#79a3f5"/>
+    </g>
+    <text x="1445" y="220" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Storage</text>
+    <!-- Functions </> -->
+    <g transform="translate(1107,340)" fill="none" stroke="#2563eb" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M-7,-10 L-18,0 L-7,10"/>
+      <path d="M7,-10 L18,0 L7,10"/>
+      <path d="M3,-13 L-3,13"/>
+    </g>
+    <text x="1107" y="410" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Functions</text>
+    <!-- Cron (clock + refresh) -->
+    <g transform="translate(1276,340)">
+      <circle cx="0" cy="0" r="16" fill="none" stroke="#2563eb" stroke-width="3.4"/>
+      <path d="M0,-9 V0 L7,5" fill="none" stroke="#2563eb" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M13,-15 l4,2 l-2,4" fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="1276" y="410" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Cron</text>
+    <!-- Memory (chip) -->
+    <g transform="translate(1445,340)" fill="none" stroke="#2563eb" stroke-width="3.2" stroke-linecap="round">
+      <rect x="-13" y="-13" width="26" height="26" rx="5"/>
+      <rect x="-6" y="-6" width="12" height="12" rx="3"/>
+      <path d="M-7,-13 V-19 M0,-13 V-19 M7,-13 V-19 M-7,13 V19 M0,13 V19 M7,13 V19 M-13,-7 H-19 M-13,0 H-19 M-13,7 H-19 M13,-7 H19 M13,0 H19 M13,7 H19"/>
+    </g>
+    <text x="1445" y="410" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Memory</text>
+    <!-- Deployment (globe) -->
+    <g transform="translate(1107,530)" fill="none" stroke="#2563eb" stroke-width="3.2">
+      <circle cx="0" cy="0" r="17"/>
+      <ellipse cx="0" cy="0" rx="7" ry="17"/>
+      <path d="M-16,-6 H16 M-16,6 H16"/>
+    </g>
+    <text x="1107" y="600" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Deployment</text>
+    <!-- Monitoring (bars + trend) -->
+    <g transform="translate(1276,530)">
+      <g fill="#3b82f6"><rect x="-16" y="2" width="8" height="12" rx="2"/><rect x="-4" y="-4" width="8" height="18" rx="2"/><rect x="8" y="-11" width="8" height="25" rx="2"/></g>
+      <path d="M-16,-6 L-6,-12 L4,-9 L16,-18" fill="none" stroke="#1d4ed8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="1276" y="600" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Monitoring</text>
+    <!-- Config (sliders) -->
+    <g transform="translate(1445,530)" stroke="#2563eb" stroke-width="3.2" stroke-linecap="round">
+      <line x1="-17" y1="-11" x2="17" y2="-11"/>
+      <line x1="-17" y1="0" x2="17" y2="0"/>
+      <line x1="-17" y1="11" x2="17" y2="11"/>
+      <circle cx="7" cy="-11" r="5" fill="#ffffff"/>
+      <circle cx="-6" cy="0" r="5" fill="#ffffff"/>
+      <circle cx="9" cy="11" r="5" fill="#ffffff"/>
+    </g>
+    <text x="1445" y="600" font-size="19" font-weight="600" fill="#34345a" text-anchor="middle">Config</text>
+  </g>
+  <!-- pagination dots -->
+  <g fill="#b9bde6"><circle cx="1256" cy="686" r="5"/><circle cx="1276" cy="686" r="5"/><circle cx="1296" cy="686" r="5"/></g>
+
+  <!-- ===================== BOTTOM FLOW ===================== -->
+  <g>
+    <line x1="378" y1="812" x2="694" y2="812" stroke="#b9a6f0" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="2 12"/>
+    <path d="M694,806 l12,6 l-12,6" fill="none" stroke="#b9a6f0" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="822" y1="812" x2="1136" y2="812" stroke="#8fb2f3" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="2 12"/>
+    <path d="M1136,806 l12,6 l-12,6" fill="none" stroke="#8fb2f3" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <!-- circle 1: sparkles -->
+  <circle cx="322" cy="812" r="46" fill="#efeafd" stroke="#ddd3f8" stroke-width="1.5"/>
+  <g transform="translate(322,812)" fill="#8b5cf6">
+    <path d="M-2,-20 C0,-7 2,-5 14,-2 C2,1 0,3 -2,16 C-4,3 -6,1 -18,-2 C-6,-5 -4,-7 -2,-20 Z"/>
+    <path d="M13,-16 C14,-10 15,-9 21,-8 C15,-7 14,-6 13,0 C12,-6 11,-7 5,-8 C11,-9 12,-10 13,-16 Z" opacity="0.85"/>
+  </g>
+  <!-- circle 2: bridge -->
+  <circle cx="760" cy="812" r="46" fill="#e9effc" stroke="#cfdcf8" stroke-width="1.5"/>
+  <g transform="translate(760,812)" stroke="#2563eb" stroke-width="3.2" fill="none" stroke-linecap="round">
+    <path d="M-22,10 Q-16,-9 -10,-11 Q0,3 10,-11 Q16,-9 22,10"/>
+    <line x1="-22" y1="12" x2="22" y2="12"/>
+    <line x1="-10" y1="-11" x2="-10" y2="12"/>
+    <line x1="10" y1="-11" x2="10" y2="12"/>
+  </g>
+  <!-- circle 3: rocket -->
+  <circle cx="1190" cy="812" r="46" fill="#e9effc" stroke="#cfdcf8" stroke-width="1.5"/>
+  <g transform="translate(1190,812)">
+    <path d="M0,-22 C9,-12 9,2 4,13 H-4 C-9,2 -9,-12 0,-22 Z" fill="#3b82f6"/>
+    <circle cx="0" cy="-7" r="4" fill="#ffffff"/>
+    <path d="M-4,8 L-12,16 L-6,14 Z" fill="#2563eb"/>
+    <path d="M4,8 L12,16 L6,14 Z" fill="#2563eb"/>
+    <path d="M-3,13 L0,22 L3,13 Z" fill="#f59e0b"/>
+  </g>
+</svg>
