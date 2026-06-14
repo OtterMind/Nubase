@@ -48,7 +48,7 @@ public class AssetsPublicController {
             @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
             HttpServletRequest request
     ) {
-        AssetFile file = assetsService.getFileOrThrow(RequestUtil.extractPathVariable(request));
+        AssetFile file = assetsService.getPublicFileOrThrow(RequestUtil.extractPathVariable(request));
         HttpHeaders headers = buildHeaders(file);
 
         if (etagMatches(ifNoneMatch, file.getEtag())) {
@@ -66,7 +66,7 @@ public class AssetsPublicController {
      */
     @RequestMapping(value = "/**", method = RequestMethod.HEAD)
     public ResponseEntity<Void> head(HttpServletRequest request) {
-        AssetFile file = assetsService.getFileOrThrow(RequestUtil.extractPathVariable(request));
+        AssetFile file = assetsService.getPublicFileOrThrow(RequestUtil.extractPathVariable(request));
         HttpHeaders headers = buildHeaders(file);
         headers.setContentLength(file.getSizeBytes());
         return ResponseEntity.ok().headers(headers).build();

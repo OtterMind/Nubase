@@ -66,6 +66,8 @@ public class SecurityConfig {
                         .requestMatchers("/functions/v1/**", "/functions/admin/v1/**").permitAll()
                         // Scheduled jobs control plane (tenant resolved by UnifiedMultiTenancyFilter; @RequireServiceRole enforces role)
                         .requestMatchers("/cron/admin/v1/**").permitAll()
+                        // App deployment records/status/logs (tenant resolved by UnifiedMultiTenancyFilter; @RequireServiceRole enforces role)
+                        .requestMatchers("/deployments/admin/v1/**").permitAll()
                         // Static asset CDN: public data plane (tenant from subdomain) and
                         // control plane (service_role enforced in AssetsAdminController)
                         .requestMatchers("/assets/v1/**", "/assets/admin/v1/**").permitAll()

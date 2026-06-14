@@ -12,5 +12,6 @@ import lombok.Setter;
 public class UpdateAssetSettingsRequest {
     private String defaultCacheControl;
     private String customBaseUrl;
+    private String spaFallbackPath;
     private Long maxFileSizeBytes;
 }

@@ -43,6 +43,10 @@ public class AssetSettings {
     @Column(name = "max_file_size_bytes")
     private Long maxFileSizeBytes;
 
+    /** Optional SPA fallback path served when a public asset path is missing. */
+    @Column(name = "spa_fallback_path")
+    private String spaFallbackPath;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 

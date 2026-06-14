@@ -25,6 +25,59 @@ The remaining modules support them: **AI Gateway** (`gateway_*`) routes LLM call
 
 Start every session with `nubase_overview()` (one-shot backend state) and `memory_context({ task })`.
 
+## 0. Preferred path: deploy manifest
+
+For Codex / Claude Code, prefer one manifest-driven deploy when the app has a static frontend, optional edge functions, optional schema migrations, and optional cron jobs:
+
+```json
+{
+  "name": "notes",
+  "migrations": [{ "name": "schema", "file": "schema.sql" }],
+  "functions": [
+    {
+      "name": "api",
+      "dir": "nubase/functions/api",
+      "verify": { "method": "GET" }
+    }
+  ],
+  "assets": {
+    "dir": "dist",
+    "cacheControl": "public, max-age=31536000",
+    "release": true,
+    "releaseId": "v1",
+    "spaFallback": true
+  },
+  "cron": [
+    {
+      "name": "nightly-digest",
+      "cronExpression": "0 7 * * *",
+      "targetType": "edge_function",
+      "functionSlug": "api"
+    }
+  ],
+  "rememberDeployment": true
+}
+```
+
+MCP:
+
+```text
+deploy_app({ "manifest": { ... } })
+```
+
+CLI:
+
+```bash
+NUBASE_ALLOW_SQL_EXECUTE=true NUBASE_ALLOW_ADMIN_WRITE=true \
+  nubase_cli app deploy nubase.deploy.json
+```
+
+`deploy_app` returns a `deploymentId`, per-step status, `releaseId`/`releasePrefix` when release mode is enabled, and `publicUrl` for the uploaded frontend. Inspect it later with `deployment_status({ id })` or `deployment_logs({ id })`. To clean up a failed or unwanted deploy, call `deployment_rollback({ id })`; it currently deletes recorded Assets and cron jobs, and records skipped actions for SQL, Memory, function deploys, and secrets because those are not safely reversible without prior state. If you need more control, use the lower-level module tools below.
+
+For static frontends, set `assets.release: true` to publish under `__releases/<app>/<releaseId>/` and upload a `__nubase_release.json` manifest. Set `assets.spaFallback: true` to point the project SPA fallback at that release's `index.html`, so client-side routes can load directly.
+
+Before uploading Assets or Functions, `deploy_app` scans the files for obvious secrets such as private keys, service-role-looking JWTs, `.env` files, and common provider API keys. To bypass this for a controlled internal deploy, set `"securityScan": false` in the manifest.
+
 ## 1. Model the data (Database + Auth)
 
 Inspect first, then create tables with RLS for user-owned data:

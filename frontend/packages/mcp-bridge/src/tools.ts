@@ -1,6 +1,7 @@
 import { requiredObject, requiredString } from './args.js';
 import type { BridgeConfig } from './config.js';
 import { withScope } from './context.js';
+import { deployApp } from './deploy-app.js';
 import { fetchDocs } from './docs.js';
 import { runFunctionsCommand } from './functions.js';
 import type { NubaseClient } from './nubase-client.js';
@@ -49,6 +50,90 @@ const TOOL_TABLE: Record<string, ToolEntry> = {
     description: "Return this project's API keys for building apps: the anon/authenticated key (safe to embed in browser/client code, subject to RLS + user JWTs) and the service_role key (server-side/trusted tooling only — never ship to a browser). Read-only.",
     inputSchema: objectSchema({}),
     handler: (_args, _config, client) => client.projectKeys(),
+  },
+  projects_list: {
+    description: 'List platform projects visible to the platform admin token. Requires NUBASE_PLATFORM_JWT or NUBASE_PLATFORM_KEY/NUBASE_METADATA_SERVICE_ROLE_KEY. Read-only.',
+    inputSchema: objectSchema({}),
+    handler: (_args, _config, client) => client.projectsList(),
+  },
+  project_keys_admin: {
+    description: 'Fetch service_role and authenticated tokens for a platform project ref. Requires platform admin auth. Read-only but returns secrets; never put service_role tokens in frontend code.',
+    inputSchema: objectSchema({ ref: { type: 'string' } }, ['ref']),
+    handler: (args, _config, client) => client.projectKeysAdmin(args),
+  },
+  project_provision: {
+    description: 'Provision a PENDING_INIT or INIT_FAILED project by ref. Requires platform admin auth and NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({ ref: { type: 'string' } }, ['ref']),
+    handler: (args, _config, client) => client.projectProvision(args),
+  },
+  project_update: {
+    description: 'Rename, describe, pause, or resume a project. Requires platform admin auth and NUBASE_ALLOW_ADMIN_WRITE=true. Soft delete is intentionally not exposed.',
+    inputSchema: objectSchema({
+      ref: { type: 'string' },
+      appName: { type: 'string' },
+      description: { type: 'string' },
+      enabled: { type: 'boolean' },
+    }, ['ref']),
+    handler: (args, _config, client) => client.projectUpdate(args),
+  },
+  project_select_instructions: {
+    description: 'Return environment/config values needed to point the bridge at a project. Does not write files or secrets.',
+    inputSchema: objectSchema({
+      ref: { type: 'string' },
+      serviceRoleKey: { type: 'string' },
+      anonKey: { type: 'string' },
+    }, ['ref']),
+    handler: (args, _config, client) => client.projectSelectInstructions(args),
+  },
+  deploy_app: {
+    description: 'Deploy a generated app from a manifest object: SQL migrations, Edge Functions, static Assets, cron jobs, and optional deployment Memory. This is the one-call deploy path for Codex/Claude Code. SQL execution needs NUBASE_ALLOW_SQL_EXECUTE=true; deploy writes need NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      manifest: {
+        type: 'object',
+        description: 'Deployment manifest. Supports name, migrations/sql, functions, assets, cron/jobs, memory, rememberDeployment, continueOnError, verifyFunctions.',
+      },
+      baseDir: { type: 'string' },
+      continueOnError: { type: 'boolean' },
+      verifyFunctions: { type: 'boolean' },
+    }, ['manifest']),
+    handler: (args, config, client) => deployApp(
+      requiredObject(args.manifest, 'manifest'),
+      config,
+      client,
+      {
+        baseDir: typeof args.baseDir === 'string' ? args.baseDir : undefined,
+        continueOnError: args.continueOnError === true,
+        verifyFunctions: typeof args.verifyFunctions === 'boolean' ? args.verifyFunctions : undefined,
+      }
+    ),
+  },
+  deployments_list: {
+    description: 'List recent app deployments for this project. Read-only.',
+    inputSchema: objectSchema({
+      limit: { type: 'number' },
+    }),
+    handler: (args, _config, client) => client.deploymentsList(args),
+  },
+  deployment_status: {
+    description: 'Get one app deployment with its recorded steps. Read-only.',
+    inputSchema: objectSchema({
+      id: { type: 'string' },
+    }, ['id']),
+    handler: (args, _config, client) => client.deploymentStatus(args),
+  },
+  deployment_logs: {
+    description: 'List recorded deployment steps/logs for one app deployment. Read-only.',
+    inputSchema: objectSchema({
+      id: { type: 'string' },
+    }, ['id']),
+    handler: (args, _config, client) => client.deploymentLogs(args),
+  },
+  deployment_rollback: {
+    description: 'Rollback supported resources from one app deployment. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true. Currently deletes recorded Assets and cron jobs, and records skipped actions for non-reversible steps.',
+    inputSchema: objectSchema({
+      id: { type: 'string' },
+    }, ['id']),
+    handler: (args, _config, client) => client.deploymentRollback(args),
   },
   memory_context: {
     description: 'Return compact relevant memory context for a task. Scope defaults can come from NUBASE_USER_ID, NUBASE_AGENT_ID, and NUBASE_RUN_ID.',
@@ -140,6 +225,45 @@ const TOOL_TABLE: Record<string, ToolEntry> = {
     inputSchema: objectSchema({ bucketId: { type: 'string' } }, ['bucketId']),
     handler: (args, _config, client) => client.storageDeleteBucket(args),
   },
+  storage_list_objects: {
+    description: 'List objects in a storage bucket with optional prefix/search/sort. Read-only.',
+    inputSchema: objectSchema({
+      bucketId: { type: 'string' },
+      prefix: { type: 'string' },
+      search: { type: 'string' },
+      limit: { type: 'number' },
+      offset: { type: 'number' },
+      sortBy: { type: 'object' },
+    }, ['bucketId']),
+    handler: (args, _config, client) => client.storageListObjects(args),
+  },
+  storage_create_signed_url: {
+    description: 'Create a temporary signed download URL for one storage object. Read-only control operation.',
+    inputSchema: objectSchema({
+      bucketId: { type: 'string' },
+      path: { type: 'string' },
+      expiresIn: { type: 'number' },
+    }, ['bucketId', 'path']),
+    handler: (args, _config, client) => client.storageCreateSignedUrl(args),
+  },
+  storage_create_signed_urls: {
+    description: 'Create temporary signed download URLs for multiple storage object paths. Read-only control operation.',
+    inputSchema: objectSchema({
+      bucketId: { type: 'string' },
+      paths: { type: 'array', items: { type: 'string' } },
+      expiresIn: { type: 'number' },
+    }, ['bucketId', 'paths']),
+    handler: (args, _config, client) => client.storageCreateSignedUrls(args),
+  },
+  storage_create_signed_upload_url: {
+    description: 'Create a temporary signed upload URL for a storage object path. Write-capable; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      bucketId: { type: 'string' },
+      path: { type: 'string' },
+      upsert: { type: 'boolean' },
+    }, ['bucketId', 'path']),
+    handler: (args, _config, client) => client.storageCreateSignedUploadUrl(args),
+  },
   auth_list_users: {
     description: 'List auth users with optional keyword search. Read-only.',
     inputSchema: objectSchema({
@@ -167,6 +291,23 @@ const TOOL_TABLE: Record<string, ToolEntry> = {
     }, ['userId']),
     handler: (args, _config, client) => client.authDeleteUser(args),
   },
+  auth_get_settings: {
+    description: 'Read tenant auth settings such as signup/login policy. Read-only.',
+    inputSchema: objectSchema({}),
+    handler: (_args, _config, client) => client.authGetSettings(),
+  },
+  auth_update_settings: {
+    description: 'Replace tenant auth settings. Pass a settings object matching the backend TenantAuthConfig. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      settings: { type: 'object' },
+    }, ['settings']),
+    handler: (args, _config, client) => client.authUpdateSettings(args),
+  },
+  auth_clear_settings: {
+    description: 'Clear tenant auth settings and fall back to defaults. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({}),
+    handler: (_args, _config, client) => client.authClearSettings(),
+  },
   gateway_list_keys: {
     description: 'List AI Gateway self-routing keys (nbk_) for this project. Read-only.',
     inputSchema: objectSchema({}),
@@ -193,6 +334,41 @@ const TOOL_TABLE: Record<string, ToolEntry> = {
       endDate: { type: 'string' },
     }),
     handler: (args, _config, client) => client.gatewayUsage(args),
+  },
+  gateway_usage_daily: {
+    description: 'AI Gateway daily usage for a date range, optionally filtered by API key id. Read-only.',
+    inputSchema: objectSchema({
+      apiKeyId: { type: 'string' },
+      startDate: { type: 'string' },
+      endDate: { type: 'string' },
+    }),
+    handler: (args, _config, client) => client.gatewayUsageDaily(args),
+  },
+  gateway_usage_by_model: {
+    description: 'AI Gateway usage grouped by model for a date range. Read-only.',
+    inputSchema: objectSchema({
+      startDate: { type: 'string' },
+      endDate: { type: 'string' },
+    }),
+    handler: (args, _config, client) => client.gatewayUsageByModel(args),
+  },
+  gateway_usage_logs: {
+    description: 'AI Gateway request usage logs with pagination and optional date/key filters. Read-only.',
+    inputSchema: objectSchema({
+      apiKeyId: { type: 'string' },
+      startDate: { type: 'string' },
+      endDate: { type: 'string' },
+      page: { type: 'number' },
+      size: { type: 'number' },
+    }),
+    handler: (args, _config, client) => client.gatewayUsageLogs(args),
+  },
+  gateway_pricing: {
+    description: 'List AI Gateway model pricing. Pass all=true to include all configured pricing rows. Read-only.',
+    inputSchema: objectSchema({
+      all: { type: 'boolean' },
+    }),
+    handler: (args, _config, client) => client.gatewayPricing(args),
   },
   functions_list: {
     description: 'List Edge Functions for this project. Read-only.',
@@ -363,6 +539,16 @@ const TOOL_TABLE: Record<string, ToolEntry> = {
     description: 'Delete a published static asset by path. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
     inputSchema: objectSchema({ path: { type: 'string' } }, ['path']),
     handler: (args, _config, client) => client.assetsDelete(args),
+  },
+  assets_update_settings: {
+    description: 'Update static asset delivery settings, including spaFallbackPath for generated SPA routes. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      defaultCacheControl: { type: 'string' },
+      customBaseUrl: { type: 'string' },
+      spaFallbackPath: { type: 'string' },
+      maxFileSizeBytes: { type: 'number' },
+    }),
+    handler: (args, _config, client) => client.assetsUpdateSettings(args),
   },
 };
 

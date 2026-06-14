@@ -64,8 +64,13 @@ CREATE TABLE IF NOT EXISTS assets.settings
     custom_base_url       TEXT,
     -- Optional per-project max asset size override (null = platform default)
     max_file_size_bytes   BIGINT,
+    -- Optional SPA fallback path served when a requested asset path is missing
+    spa_fallback_path     TEXT,
     updated_at            TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE assets.settings
+    ADD COLUMN IF NOT EXISTS spa_fallback_path TEXT;
 
 DROP TRIGGER IF EXISTS update_settings_updated_at ON assets.settings;
 CREATE TRIGGER update_settings_updated_at

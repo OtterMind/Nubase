@@ -9,6 +9,8 @@ export interface BridgeConfig {
   // The anon/authenticated key for client apps. Captured at authorize time or via
   // NUBASE_ANON_KEY; projectKey itself is the service_role key.
   anonKey?: string;
+  platformKey?: string;
+  platformJwt?: string;
   userJwt?: string;
   agentId?: string;
   userId?: string;
@@ -27,6 +29,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
     projectKey,
     projectRef: blankToUndefined(env.NUBASE_PROJECT_REF),
     anonKey: blankToUndefined(env.NUBASE_ANON_KEY),
+    platformKey: blankToUndefined(env.NUBASE_PLATFORM_KEY || env.NUBASE_METADATA_SERVICE_ROLE_KEY),
+    platformJwt: blankToUndefined(env.NUBASE_PLATFORM_JWT),
     userJwt: blankToUndefined(env.NUBASE_USER_JWT),
     agentId: blankToUndefined(env.NUBASE_AGENT_ID),
     userId: blankToUndefined(env.NUBASE_USER_ID),

@@ -4,7 +4,7 @@ Nubase exposes an MCP server for trusted AI coding agents. Agents use it to insp
 
 ## Endpoint
 
-Default local endpoint:
+Remote HTTP MCP endpoint:
 
 ```text
 http://localhost:9999/mcp
@@ -30,12 +30,50 @@ GET /agent/v1/capabilities
 
 These endpoints intentionally do not return secrets.
 
+## Local vs Remote MCP
+
+Nubase supports two MCP delivery modes:
+
+- **Local stdio bridge (`nubase_cli`)** — best for Codex / Claude Code. It can read the local workspace, bundle Edge Functions, upload a static `dist` directory, and run `deploy_app`.
+- **Remote HTTP MCP (`/mcp`)** — best for hosted or URL-based clients. It exposes server-side tools for Memory, Database inspection/SQL, Assets, Auth admin, Storage bucket admin, AI Gateway keys, Edge Function metadata/bundle deploy/secrets/logs, and cron jobs.
+
+Use the local bridge for operations that need local files: `functions_new`, `functions_deploy` from a source directory, `assets_upload` from a directory, and `deploy_app` from a manifest file. Use remote `/mcp` for already-materialized payloads and control-plane operations such as `functionsDeployBundle`, `assetsUpload`, `cronCreate`, `deploymentRollback`, `authCreateUser`, `storageCreateBucket`, and `gatewayIssueKey`.
+
+Project lifecycle tools are platform-level, not tenant-level. Configure one of:
+
+- `NUBASE_PLATFORM_JWT` — platform user session token.
+- `NUBASE_PLATFORM_KEY` or `NUBASE_METADATA_SERVICE_ROLE_KEY` — metadata service-role key.
+
+Then use:
+
+- `projects_list()` — list visible projects.
+- `project_keys_admin(ref)` — fetch service_role and authenticated keys for a project.
+- `project_provision(ref)` — run pending/failed provisioning; requires `NUBASE_ALLOW_ADMIN_WRITE=true`.
+- `project_update(ref, appName, description, enabled)` — rename/describe/pause/resume; requires `NUBASE_ALLOW_ADMIN_WRITE=true`.
+- `project_select_instructions(ref, serviceRoleKey, anonKey)` — return env/config values needed to point an agent at that project. It does not write files.
+
 ## Start Here
 
 - `nubase_overview(schema?)`: one-shot snapshot of the whole backend — capabilities, schema, buckets, auth users, gateway keys, permission gates, next steps. Call this first.
 - `nubase_capabilities()` / `nubase_instructions()`: discover capabilities and safe-use guidance.
 - `project_keys()`: the anon key (for browser/client code) and the service_role key (server-side only).
 - `fetch_docs(topic)`: fetch bundled Nubase usage docs for agents.
+
+## Auth, Storage, And AI Gateway Tools
+
+- `auth_list_users(page?, perPage?, keyword?)`: list users.
+- `auth_create_user(email, password?, phone?, role?)`, `auth_delete_user(userId, softDelete?)`: manage users. Write tools require `NUBASE_ALLOW_ADMIN_WRITE=true`.
+- `auth_get_settings()`: read tenant auth settings.
+- `auth_update_settings(settings)`, `auth_clear_settings()`: replace or clear tenant auth settings. Write tools require `NUBASE_ALLOW_ADMIN_WRITE=true`.
+- `storage_list_buckets(search?, limit?, offset?)`: list buckets.
+- `storage_create_bucket(name, public?, fileSizeLimit?)`, `storage_delete_bucket(bucketId)`: manage buckets. Write tools require `NUBASE_ALLOW_ADMIN_WRITE=true`.
+- `storage_list_objects(bucketId, prefix?, search?, limit?, offset?, sortBy?)`: list objects in a bucket.
+- `storage_create_signed_url(bucketId, path, expiresIn?)`, `storage_create_signed_urls(bucketId, paths, expiresIn?)`: create temporary download URLs.
+- `storage_create_signed_upload_url(bucketId, path, upsert?)`: create a temporary upload URL. Requires `NUBASE_ALLOW_ADMIN_WRITE=true`.
+- `gateway_list_keys()`, `gateway_usage(startDate?, endDate?)`: inspect AI Gateway keys and overview usage.
+- `gateway_usage_daily(apiKeyId?, startDate?, endDate?)`, `gateway_usage_by_model(startDate?, endDate?)`, `gateway_usage_logs(apiKeyId?, startDate?, endDate?, page?, size?)`: usage detail.
+- `gateway_pricing(all?)`: read model pricing rows.
+- `gateway_issue_key(name?, description?, expiresAt?)`, `gateway_revoke_key(id)`: manage AI Gateway keys. Write tools require `NUBASE_ALLOW_ADMIN_WRITE=true`.
 
 ## Database Tools
 
@@ -58,6 +96,7 @@ Static asset CDN MCP tools (see [assets.md](assets.md)). This is where a generat
 - `assets_upload(path, content | contentBase64, contentType, cacheControl, upsert)`: publish a static asset to the project's public CDN (`/assets/v1/<path>`). Pass `content` for UTF-8 text files (css/js/html/svg) or `contentBase64` for binaries (images/fonts). `contentType` is inferred from the path when omitted; `upsert` defaults to `true`. Returns the public URL.
 - `assets_list(prefix, search, limit, offset)`: list assets with their public URLs.
 - `assets_delete(path)`: delete an asset.
+- `assets_update_settings(defaultCacheControl, customBaseUrl, spaFallbackPath, maxFileSizeBytes)`: update delivery settings, including SPA fallback.
 
 Example — publish a stylesheet:
 

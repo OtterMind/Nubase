@@ -35,6 +35,7 @@ When starting a Nubase task:
 When the goal is to ship a generated app, the path is:
 
 1. **Inspect** — `nubase_overview()`.
+2. **Prefer one-call deploy** — when the app has a deploy manifest, call `deploy_app({ manifest })` or use `nubase_cli app deploy nubase.deploy.json`. It orchestrates SQL migrations, Functions, Assets, cron jobs, and optional Memory.
 2. **Data + auth** — model tables with `sql_execute` DDL (RLS for user-owned data); manage users with `auth_*`. See `references/database.md`, `references/auth-storage.md`.
 3. **Backend logic** — scaffold and deploy edge functions: `functions_new` → write the handler → `functions_deploy` → `functions_invoke` to verify. See `references/functions.md`.
 4. **Frontend** — publish the generated HTML/CSS/JS with `assets_upload`; open the returned `publicUrl`. See `references/assets.md`.
@@ -51,17 +52,21 @@ Expected tools from `nubase_cli`:
 Core:
 
 - `nubase_overview` (start here — one-shot backend snapshot)
-- `fetch_docs`, `nubase_capabilities`, `nubase_instructions`, `project_keys`
+- `fetch_docs`, `nubase_capabilities`, `nubase_instructions`, `project_keys`, `projects_list`, `project_keys_admin`, `project_select_instructions`, `deploy_app`, `deployment_rollback`
 - `memory_context`, `memory_search`, `memory_write`
 - `rest_select`, `sql_dry_run`, `sql_execute`
 
-Backend ops (read), in module order (Database, Auth, Storage, AI Gateway): `db_export_schema`, `db_list_migrations`, `auth_list_users`, `storage_list_buckets`, `gateway_list_keys`, `gateway_usage`.
+Backend ops (read), in module order (Database, Auth, Storage, AI Gateway): `db_export_schema`, `db_list_migrations`, `auth_list_users`, `auth_get_settings`, `storage_list_buckets`, `storage_list_objects`, `storage_create_signed_url`, `storage_create_signed_urls`, `gateway_list_keys`, `gateway_usage`, `gateway_usage_daily`, `gateway_usage_by_model`, `gateway_usage_logs`, `gateway_pricing`.
 
 Deploy (read), in module order (Assets, Functions, cron): `assets_list`, `functions_list`, `functions_logs`, `functions_secrets_list`, `cron_list`, `cron_get`, `cron_runs`.
 
-Backend ops (write, gated by `NUBASE_ALLOW_ADMIN_WRITE=true`): `auth_create_user`, `auth_delete_user`, `storage_create_bucket`, `storage_delete_bucket`, `gateway_issue_key`, `gateway_revoke_key`.
+Backend ops (write, gated by `NUBASE_ALLOW_ADMIN_WRITE=true`): `auth_create_user`, `auth_delete_user`, `auth_update_settings`, `auth_clear_settings`, `storage_create_bucket`, `storage_delete_bucket`, `storage_create_signed_upload_url`, `gateway_issue_key`, `gateway_revoke_key`.
 
-Deploy (write, gated by `NUBASE_ALLOW_ADMIN_WRITE=true`): `assets_upload`, `assets_delete`, `functions_new`, `functions_deploy`, `functions_invoke`, `functions_delete`, `functions_secrets_set`, `cron_create`, `cron_update`, `cron_delete`.
+Deploy (write, gated by `NUBASE_ALLOW_ADMIN_WRITE=true`): `deploy_app`, `deployment_rollback`, `assets_upload`, `assets_delete`, `assets_update_settings`, `functions_new`, `functions_deploy`, `functions_invoke`, `functions_delete`, `functions_secrets_set`, `cron_create`, `cron_update`, `cron_delete`.
+
+Project lifecycle (platform auth required with `NUBASE_PLATFORM_JWT` or `NUBASE_PLATFORM_KEY`): `projects_list`, `project_keys_admin`, `project_select_instructions`. `project_provision` and `project_update` are also gated by `NUBASE_ALLOW_ADMIN_WRITE=true`. Project delete is intentionally not exposed.
+
+Before publishing, `deploy_app` and `functions_deploy` scan uploads for obvious secrets such as private keys, `.env` files, service-role-looking JWTs, and common provider API keys. Only bypass with `securityScan: false` or `--no-security-scan` when the user explicitly accepts the risk.
 
 When a gate is off, write tools return `{ success: false, error }` without touching the backend — this is a permission switch, not a missing feature. Ask the user to enable the gate, then retry. If a tool is unavailable entirely, continue with REST/API guidance and tell the user what automation was unavailable.
 

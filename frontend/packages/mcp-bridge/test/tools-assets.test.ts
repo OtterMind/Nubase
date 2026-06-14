@@ -33,9 +33,49 @@ function stubFetch(seen: Array<{ url: string; method?: string; body?: unknown; c
 
 test('MCP tool list includes asset tools', () => {
   const names = new Set(TOOLS.map((tool) => tool.name));
-  for (const name of ['assets_list', 'assets_upload', 'assets_delete']) {
+  for (const name of ['assets_list', 'assets_upload', 'assets_delete', 'assets_update_settings']) {
     assert.equal(names.has(name), true, `missing ${name}`);
   }
+});
+
+test('assets_update_settings PATCHes settings when admin writes are on', async () => {
+  const toolConfig = config({ allowAdminWrite: true });
+  const seen: Array<{ url: string; method?: string; body?: unknown }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    seen.push({
+      url: String(input),
+      method: init?.method,
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    return new Response(JSON.stringify({ spaFallbackPath: 'index.html' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+  try {
+    await callTool('assets_update_settings', { spaFallbackPath: 'index.html' }, toolConfig, new NubaseClient(toolConfig));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(seen[0]?.method, 'PATCH');
+  assert.equal(seen[0]?.url, 'http://localhost:9999/assets/admin/v1/settings');
+  assert.deepEqual(seen[0]?.body, { spaFallbackPath: 'index.html' });
+});
+
+test('assets_update_settings refuses with PERMISSION_GATE_OFF when admin writes are off', async () => {
+  const toolConfig = config({ allowAdminWrite: false });
+  const seen: any[] = [];
+  const restore = stubFetch(seen);
+  let result: Record<string, any>;
+  try {
+    result = (await callTool('assets_update_settings', { spaFallbackPath: 'index.html' }, toolConfig, new NubaseClient(toolConfig))) as Record<string, any>;
+  } finally {
+    restore();
+  }
+  assert.equal(result.success, false);
+  assert.equal(result.code, 'PERMISSION_GATE_OFF');
+  assert.equal(seen.length, 0);
 });
 
 test('assets_upload refuses with PERMISSION_GATE_OFF when admin writes are off', async () => {

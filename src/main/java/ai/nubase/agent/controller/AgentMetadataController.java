@@ -22,6 +22,10 @@ public class AgentMetadataController {
                 Prefer REST APIs for application data through /rest/v1.
                 Use Auth through /auth/v1 for users and sessions.
                 Use Storage through /storage/v1 for buckets, objects, and signed URLs.
+                Use Assets through /assets/v1 and /assets/admin/v1 to publish generated static frontends.
+                Use Functions through /functions/v1 and /functions/admin/v1 to deploy backend logic.
+                Use cron through /cron/admin/v1 to schedule recurring jobs.
+                For generated apps, prefer deploy_app from the nubase_cli MCP bridge to orchestrate SQL, Functions, Assets, cron, and Memory.
                 Use service_role only for server-side or admin actions.
                 Write durable project decisions with memoryWrite.
                 MCP tools are available at /mcp.
@@ -39,12 +43,35 @@ public class AgentMetadataController {
                         "database", Map.of("enabled", true, "basePath", "/rest/v1"),
                         "auth", Map.of("enabled", true, "basePath", "/auth/v1"),
                         "storage", Map.of("enabled", true, "basePath", "/storage/v1"),
+                        "assets", Map.of(
+                                "enabled", true,
+                                "publicBasePath", "/assets/v1",
+                                "adminBasePath", "/assets/admin/v1",
+                                "purpose", "publish generated static frontends"
+                        ),
+                        "functions", Map.of(
+                                "enabled", true,
+                                "publicBasePath", "/functions/v1",
+                                "adminBasePath", "/functions/admin/v1",
+                                "purpose", "deploy edge/serverless backend logic"
+                        ),
+                        "cron", Map.of(
+                                "enabled", true,
+                                "adminBasePath", "/cron/admin/v1",
+                                "purpose", "schedule edge functions or database functions"
+                        ),
                         "mcp", Map.of("enabled", true, "endpoint", "/mcp"),
                         "aiGateway", Map.of(
                                 "enabled", true,
                                 "openAIBasePath", "/v1",
                                 "anthropicMessagesPath", "/v1/messages"
                         )
+                ),
+                "deploy", Map.of(
+                        "enabled", true,
+                        "recommendedMcpTool", "deploy_app",
+                        "cli", "nubase_cli app deploy <manifest.json>",
+                        "supports", Set.of("sql", "functions", "assets", "cron", "memory")
                 )
         ));
     }

@@ -174,6 +174,12 @@ public class AssetsService {
                 .orElseThrow(() -> AssetsExceptions.notFound(path));
     }
 
+    public AssetFile getPublicFileOrThrow(String rawPath) {
+        String path = normalizePath(rawPath);
+        return assetFileRepository.findByPath(path)
+                .orElseGet(() -> getFallbackFileOrThrow(path));
+    }
+
     /** Open the R2 object stream for an asset. Caller is responsible for consuming/closing it. */
     public InputStream openStream(AssetFile file) {
         String s3Key = resolveKey(file.getPath());
@@ -218,6 +224,10 @@ public class AssetsService {
                 settings.setCustomBaseUrl(StringUtils.stripEnd(base, "/"));
             }
         }
+        if (request.getSpaFallbackPath() != null) {
+            String fallback = request.getSpaFallbackPath().trim();
+            settings.setSpaFallbackPath(fallback.isEmpty() ? null : normalizePath(fallback));
+        }
         if (request.getMaxFileSizeBytes() != null) {
             settings.setMaxFileSizeBytes(request.getMaxFileSizeBytes() > 0
                     ? request.getMaxFileSizeBytes() : null);
@@ -249,6 +259,7 @@ public class AssetsService {
         return AssetSettingsDTO.builder()
                 .defaultCacheControl(settings.getDefaultCacheControl())
                 .customBaseUrl(settings.getCustomBaseUrl())
+                .spaFallbackPath(settings.getSpaFallbackPath())
                 .maxFileSizeBytes(settings.getMaxFileSizeBytes())
                 .effectiveMaxFileSizeBytes(effectiveMaxFileSize(settings))
                 .updatedAt(settings.getUpdatedAt())
@@ -282,6 +293,16 @@ public class AssetsService {
                         .id(AssetSettings.SINGLETON_ID)
                         .defaultCacheControl(DEFAULT_CACHE_CONTROL)
                         .build());
+    }
+
+    private AssetFile getFallbackFileOrThrow(String requestedPath) {
+        AssetSettings settings = getOrDefaultSettings();
+        String fallbackPath = settings.getSpaFallbackPath();
+        if (StringUtils.isBlank(fallbackPath) || fallbackPath.equals(requestedPath)) {
+            throw AssetsExceptions.notFound(requestedPath);
+        }
+        return assetFileRepository.findByPath(fallbackPath)
+                .orElseThrow(() -> AssetsExceptions.notFound(requestedPath));
     }
 
     private long effectiveMaxFileSize(AssetSettings settings) {

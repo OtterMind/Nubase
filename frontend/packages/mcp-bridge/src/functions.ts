@@ -4,6 +4,7 @@ import path from 'node:path';
 import { intOption, required } from './args.js';
 import type { BridgeConfig } from './config.js';
 import { NubaseClient } from './nubase-client.js';
+import { assertNoSecurityFindings, scanUploadContent } from './security-scan.js';
 
 export async function runFunctionsCommand(args: string[], config: BridgeConfig, client = new NubaseClient(config)) {
   const command = args[0];
@@ -95,6 +96,9 @@ async function functionsDeploy(args: string[], client: NubaseClient) {
   const bundle = (await shouldBundle(dir, options, entrypoint))
     ? await bundleEntrypoint(dir, entrypoint)
     : await bundleDirectory(dir);
+  if (options['no-security-scan'] !== true) {
+    await assertNoSecurityFindings(() => scanFunctionBundle(bundle.sourceBundleBase64, slug));
+  }
   // Display name: only the manifest may set it. On redeploy we must not send a
   // defaulted name, or a name edited in Studio would silently be reset to slug.
   const manifestName = typeof manifest.name === 'string' && manifest.name.trim() ? manifest.name.trim() : undefined;
@@ -121,6 +125,17 @@ async function functionsDeploy(args: string[], client: NubaseClient) {
     artifactType: 'source_bundle',
     sourceBundleBase64: bundle.sourceBundleBase64,
   });
+}
+
+function scanFunctionBundle(sourceBundleBase64: string, slug: string) {
+  const payload = JSON.parse(Buffer.from(sourceBundleBase64, 'base64').toString('utf8')) as {
+    files?: Array<{ path: string; content: string }>;
+  };
+  const findings = [];
+  for (const file of payload.files ?? []) {
+    findings.push(...scanUploadContent(`function:${slug}/${file.path}`, Buffer.from(file.content, 'base64')));
+  }
+  return findings;
 }
 
 async function functionsInvoke(args: string[], client: NubaseClient) {
@@ -309,6 +324,7 @@ function functionsHelp() {
       'nubase_cli functions new <name>',
       'nubase_cli functions list',
       'NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions deploy <name> [--bundle|--no-bundle]',
+      'NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions deploy <name> --no-security-scan',
       'NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions delete <name>',
       'nubase_cli functions logs [name] --limit 50',
       'nubase_cli functions secrets list <name>',

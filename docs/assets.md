@@ -61,6 +61,7 @@ Asset paths are restricted to URL-safe segments (`[A-Za-z0-9._-]`, separated by 
 
 - `defaultCacheControl` — applied to assets without a per-file override.
 - `customBaseUrl` — the project's own domain/CDN prefix; when set, public URLs become `{customBaseUrl}/{path}` (your CDN/domain mapping decides what sits behind the prefix). Empty string clears it.
+- `spaFallbackPath` — optional asset path to serve when a public GET/HEAD path is missing, typically a release `index.html` for React/Vite/SPA routes. Empty string clears it.
 - `maxFileSizeBytes` — per-project size cap (never above the platform cap `nubase.assets.max-file-size`, default 25MB). `0` clears the override.
 
 ## MCP tools
@@ -70,8 +71,24 @@ Agents connected over MCP can publish assets directly:
 - `assets_upload(path, content | contentBase64, contentType, cacheControl, upsert)`
 - `assets_list(prefix, search, limit, offset)`
 - `assets_delete(path)`
+- `assets_update_settings(defaultCacheControl, customBaseUrl, spaFallbackPath, maxFileSizeBytes)`
 
 `assets_upload` / `assets_delete` are gated by `NUBASE_ALLOW_ADMIN_WRITE=true` and require the service_role apikey on the MCP connection. There is also a `nubase_cli assets` CLI. See [mcp.md](mcp.md).
+
+`deploy_app` release mode can publish a complete static app under a release prefix:
+
+```json
+{
+  "assets": {
+    "dir": "dist",
+    "release": true,
+    "releaseId": "v1",
+    "spaFallback": true
+  }
+}
+```
+
+The bridge uploads files under `__releases/<app>/<releaseId>/`, writes `__nubase_release.json`, and sets `spaFallbackPath` to that release's `index.html` when `spaFallback` is true.
 
 ## Configuration
 

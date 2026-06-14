@@ -106,3 +106,4 @@ node_modules/
 .pnpm-store/
 **/.turbo/
 **/*.tsbuildinfo
+/docs/articles/wechat/

@@ -122,6 +122,58 @@ export class NubaseClient {
     );
   }
 
+  storageListObjects(args: Record<string, unknown>) {
+    const bucketId = requiredString(args.bucketId, 'bucketId');
+    return this.request(`/storage/v1/object/list/${encodeURIComponent(bucketId)}`, {
+      method: 'POST',
+      body: {
+        prefix: typeof args.prefix === 'string' ? args.prefix : undefined,
+        limit: typeof args.limit === 'number' ? args.limit : undefined,
+        offset: typeof args.offset === 'number' ? args.offset : undefined,
+        search: typeof args.search === 'string' ? args.search : undefined,
+        sortBy:
+          args.sortBy && typeof args.sortBy === 'object' && !Array.isArray(args.sortBy) ? args.sortBy : undefined,
+      },
+    });
+  }
+
+  storageCreateSignedUrl(args: Record<string, unknown>) {
+    const bucketId = requiredString(args.bucketId, 'bucketId');
+    const path = requiredString(args.path, 'path');
+    return this.request(`/storage/v1/object/sign/${encodeURIComponent(bucketId)}/${encodeAssetPath(path)}`, {
+      method: 'POST',
+      body: { expiresIn: typeof args.expiresIn === 'number' ? args.expiresIn : undefined },
+    });
+  }
+
+  storageCreateSignedUrls(args: Record<string, unknown>) {
+    const bucketId = requiredString(args.bucketId, 'bucketId');
+    if (!Array.isArray(args.paths)) throw new Error('paths array is required');
+    return this.request(`/storage/v1/object/sign/${encodeURIComponent(bucketId)}`, {
+      method: 'POST',
+      body: {
+        paths: args.paths,
+        expiresIn: typeof args.expiresIn === 'number' ? args.expiresIn : undefined,
+      },
+    });
+  }
+
+  storageCreateSignedUploadUrl(args: Record<string, unknown>) {
+    const bucketId = requiredString(args.bucketId, 'bucketId');
+    const path = requiredString(args.path, 'path');
+    return this.guardedWrite('create storage signed upload URL', async () => {
+      const { data } = await this.rawRequest(
+        `/storage/v1/object/upload/sign/${encodeURIComponent(bucketId)}/${encodeAssetPath(path)}`,
+        {
+          method: 'POST',
+          contentType: 'application/json',
+          headers: args.upsert === true ? { 'x-upsert': 'true' } : undefined,
+        }
+      );
+      return data;
+    });
+  }
+
   // --- Auth admin (Supabase-style /auth/v1/admin) -------------------------
 
   authListUsers(args: Record<string, unknown>) {
@@ -149,6 +201,24 @@ export class NubaseClient {
     const query = buildQuery({ should_soft_delete: args.softDelete === true ? 'true' : undefined });
     return this.guardedWrite('delete user', () =>
       this.request(`/auth/v1/admin/users/${encodeURIComponent(userId)}${query}`, { method: 'DELETE' })
+    );
+  }
+
+  authGetSettings() {
+    return this.request('/auth/v1/admin/settings/auth');
+  }
+
+  authUpdateSettings(args: Record<string, unknown>) {
+    const settings =
+      args.settings && typeof args.settings === 'object' && !Array.isArray(args.settings) ? args.settings : args;
+    return this.guardedWrite('update auth settings', () =>
+      this.request('/auth/v1/admin/settings/auth', { method: 'PUT', body: settings })
+    );
+  }
+
+  authClearSettings() {
+    return this.guardedWrite('clear auth settings', () =>
+      this.request('/auth/v1/admin/settings/auth', { method: 'DELETE' })
     );
   }
 
@@ -194,6 +264,31 @@ export class NubaseClient {
   gatewayUsage(args: Record<string, unknown>) {
     const query = buildQuery({ start_date: args.startDate, end_date: args.endDate });
     return this.request(`/ai-gateway/admin/v1/usage/overview${query}`);
+  }
+
+  gatewayUsageDaily(args: Record<string, unknown>) {
+    const query = buildQuery({ api_key_id: args.apiKeyId, start_date: args.startDate, end_date: args.endDate });
+    return this.request(`/ai-gateway/admin/v1/usage/daily${query}`);
+  }
+
+  gatewayUsageByModel(args: Record<string, unknown>) {
+    const query = buildQuery({ start_date: args.startDate, end_date: args.endDate });
+    return this.request(`/ai-gateway/admin/v1/usage/by-model${query}`);
+  }
+
+  gatewayUsageLogs(args: Record<string, unknown>) {
+    const query = buildQuery({
+      api_key_id: args.apiKeyId,
+      start_date: args.startDate,
+      end_date: args.endDate,
+      page: args.page,
+      size: args.size,
+    });
+    return this.request(`/ai-gateway/admin/v1/usage/logs${query}`);
+  }
+
+  gatewayPricing(args: Record<string, unknown> = {}) {
+    return this.request(args.all === true ? '/ai-gateway/admin/v1/pricing/all' : '/ai-gateway/admin/v1/pricing');
   }
 
   // --- Edge Functions control plane (/functions/admin/v1) ----------------
@@ -408,6 +503,140 @@ export class NubaseClient {
     );
   }
 
+  assetsGetSettings() {
+    return this.request('/assets/admin/v1/settings');
+  }
+
+  assetsUpdateSettings(args: Record<string, unknown>) {
+    return this.guardedWrite('update asset settings', () =>
+      this.request('/assets/admin/v1/settings', {
+        method: 'PATCH',
+        body: {
+          defaultCacheControl: typeof args.defaultCacheControl === 'string' ? args.defaultCacheControl : undefined,
+          customBaseUrl: typeof args.customBaseUrl === 'string' ? args.customBaseUrl : undefined,
+          spaFallbackPath: typeof args.spaFallbackPath === 'string' ? args.spaFallbackPath : undefined,
+          maxFileSizeBytes: typeof args.maxFileSizeBytes === 'number' ? args.maxFileSizeBytes : undefined,
+        },
+      })
+    );
+  }
+
+  // --- App deployments control plane (/deployments/admin/v1) --------------
+
+  deploymentCreate(args: Record<string, unknown>) {
+    return this.guardedWrite('create deployment record', () =>
+      this.request('/deployments/admin/v1/deployments', {
+        method: 'POST',
+        body: args,
+      })
+    );
+  }
+
+  deploymentRecordStep(args: Record<string, unknown>) {
+    const deploymentId = requiredString(args.deploymentId, 'deploymentId');
+    return this.guardedWrite('record deployment step', () =>
+      this.request(`/deployments/admin/v1/deployments/${encodeURIComponent(deploymentId)}/steps`, {
+        method: 'POST',
+        body: {
+          stepOrder: args.stepOrder,
+          stepName: args.stepName,
+          targetName: args.targetName,
+          status: args.status,
+          result: args.result,
+          errorMessage: args.errorMessage,
+        },
+      })
+    );
+  }
+
+  deploymentComplete(args: Record<string, unknown>) {
+    const deploymentId = requiredString(args.deploymentId, 'deploymentId');
+    return this.guardedWrite('complete deployment record', () =>
+      this.request(`/deployments/admin/v1/deployments/${encodeURIComponent(deploymentId)}/complete`, {
+        method: 'POST',
+        body: {
+          status: args.status,
+          publicUrl: args.publicUrl,
+          errorMessage: args.errorMessage,
+        },
+      })
+    );
+  }
+
+  deploymentsList(args: Record<string, unknown> = {}) {
+    const query = buildQuery({ limit: args.limit });
+    return this.request(`/deployments/admin/v1/deployments${query}`);
+  }
+
+  deploymentStatus(args: Record<string, unknown>) {
+    const id = requiredString(args.id, 'id');
+    return this.request(`/deployments/admin/v1/deployments/${encodeURIComponent(id)}`);
+  }
+
+  deploymentLogs(args: Record<string, unknown>) {
+    const id = requiredString(args.id, 'id');
+    return this.request(`/deployments/admin/v1/deployments/${encodeURIComponent(id)}/logs`);
+  }
+
+  deploymentRollback(args: Record<string, unknown>) {
+    const id = requiredString(args.id, 'id');
+    return this.guardedWrite('rollback deployment', () =>
+      this.request(`/deployments/admin/v1/deployments/${encodeURIComponent(id)}/rollback`, { method: 'POST' })
+    );
+  }
+
+  // --- Project lifecycle control plane (/auth/v1/admin/projects) ----------
+
+  projectsList() {
+    return this.platformRequest('/auth/v1/admin/projects');
+  }
+
+  projectKeysAdmin(args: Record<string, unknown>) {
+    const ref = requiredString(args.ref, 'ref');
+    return this.platformRequest(`/auth/v1/admin/projects/${encodeURIComponent(ref)}/keys`);
+  }
+
+  projectProvision(args: Record<string, unknown>) {
+    const ref = requiredString(args.ref, 'ref');
+    return this.guardedPlatformWrite('provision project', () =>
+      this.platformRequest(`/auth/v1/admin/projects/${encodeURIComponent(ref)}/provision`, { method: 'POST' })
+    );
+  }
+
+  projectUpdate(args: Record<string, unknown>) {
+    const ref = requiredString(args.ref, 'ref');
+    return this.guardedPlatformWrite('update project', () =>
+      this.platformRequest(`/auth/v1/admin/projects/${encodeURIComponent(ref)}`, {
+        method: 'PATCH',
+        body: {
+          appName: typeof args.appName === 'string' ? args.appName : undefined,
+          description: typeof args.description === 'string' ? args.description : undefined,
+          enabled: typeof args.enabled === 'boolean' ? args.enabled : undefined,
+        },
+      })
+    );
+  }
+
+  projectSelectInstructions(args: Record<string, unknown>) {
+    const ref = requiredString(args.ref, 'ref');
+    const serviceRoleKey = typeof args.serviceRoleKey === 'string' ? args.serviceRoleKey : undefined;
+    const anonKey = typeof args.anonKey === 'string' ? args.anonKey : undefined;
+    return {
+      success: true,
+      ref,
+      config: {
+        NUBASE_URL: this.config.nubaseUrl,
+        NUBASE_PROJECT_REF: ref,
+        NUBASE_PROJECT_KEY: serviceRoleKey ?? '<service_role_token>',
+        NUBASE_ANON_KEY: anonKey ?? '<authenticated_token>',
+      },
+      instructions: [
+        'Set these values in the agent environment or re-run nubase_cli authorize for this project.',
+        'Do not commit service_role tokens to the repository.',
+      ],
+    };
+  }
+
   // --- Project API keys ---------------------------------------------------
   // The two project keys an app needs: the anon/authenticated key for browser
   // and client code, and the service_role key for trusted server-side code.
@@ -448,6 +677,19 @@ export class NubaseClient {
         success: false,
         code: 'PERMISSION_GATE_OFF',
         error: `Cannot ${action}: this is supported but admin writes are gated off by default. This is a permission switch, not a missing feature — it will work once enabled.`,
+        remedy: 'Set NUBASE_ALLOW_ADMIN_WRITE=true in the MCP bridge env, then retry.',
+        userAction: `Ask the user to enable admin writes (NUBASE_ALLOW_ADMIN_WRITE=true) so you can ${action}.`,
+      };
+    }
+    return run();
+  }
+
+  private async guardedPlatformWrite<T>(action: string, run: () => Promise<T>) {
+    if (!this.config.allowAdminWrite) {
+      return {
+        success: false,
+        code: 'PERMISSION_GATE_OFF',
+        error: `Cannot ${action}: this platform admin write is gated off by default.`,
         remedy: 'Set NUBASE_ALLOW_ADMIN_WRITE=true in the MCP bridge env, then retry.',
         userAction: `Ask the user to enable admin writes (NUBASE_ALLOW_ADMIN_WRITE=true) so you can ${action}.`,
       };
@@ -559,15 +801,53 @@ values (${sqlLiteral(entry.risk)}, ${entry.statementCount}, ${sqlLiteral(entry.s
     return data;
   }
 
+  private async platformRequest(path: string, options: { method?: string; body?: unknown } = {}) {
+    const token = this.config.platformJwt || this.config.platformKey;
+    if (!token) {
+      return {
+        success: false,
+        code: 'PLATFORM_AUTH_REQUIRED',
+        error: 'Project lifecycle tools require platform admin auth, not a tenant service_role key.',
+        remedy: 'Set NUBASE_PLATFORM_JWT for a platform user session, or NUBASE_PLATFORM_KEY/NUBASE_METADATA_SERVICE_ROLE_KEY for the metadata service-role key.',
+      };
+    }
+    const headers: Record<string, string> = {};
+    if (this.config.platformJwt) {
+      headers.Authorization = `Bearer ${this.config.platformJwt}`;
+    } else {
+      headers.apikey = token;
+    }
+    const body = options.body === undefined ? undefined : JSON.stringify(options.body);
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const response = await fetch(`${this.config.nubaseUrl}${path}`, {
+      method: options.method || 'GET',
+      headers,
+      body,
+    });
+    const text = await response.text();
+    const data = parseResponse(text);
+    if (!response.ok) {
+      throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
+    }
+    return data;
+  }
+
   private async rawRequest(
     path: string,
-    options: { method?: string; body?: string | Uint8Array; contentType?: string; throwOnError?: boolean } = {}
+    options: {
+      method?: string;
+      body?: string | Uint8Array;
+      contentType?: string;
+      throwOnError?: boolean;
+      headers?: Record<string, string>;
+    } = {}
   ) {
     if (!this.config.projectKey) {
       throw new Error('Missing NUBASE_PROJECT_KEY or NUBASE_API_KEY.');
     }
     const headers: Record<string, string> = {
       apikey: this.config.projectKey,
+      ...options.headers,
     };
     if (options.contentType) headers['Content-Type'] = options.contentType;
     if (this.config.userJwt) {

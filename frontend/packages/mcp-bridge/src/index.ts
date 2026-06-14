@@ -5,6 +5,7 @@ import { loadConfigAsync } from './config.js';
 import { installSkills, parseInstallArgs } from './install-skills.js';
 import { runAssetsCommand } from './assets.js';
 import { runCronCommand } from './cron.js';
+import { runDeployAppCommand } from './deploy-app.js';
 import { resolveExitCode, runFunctionsCommand } from './functions.js';
 import { McpStdioServer } from './mcp-stdio.js';
 import { NubaseClient } from './nubase-client.js';
@@ -81,6 +82,20 @@ if (process.argv[2] === 'cron') {
 if (process.argv[2] === 'assets') {
   try {
     const result = await runAssetsCommand(process.argv.slice(3), config, client);
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(resolveExitCode(result));
+  } catch (err) {
+    console.error(JSON.stringify({
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    }, null, 2));
+    process.exit(1);
+  }
+}
+
+if (process.argv[2] === 'app') {
+  try {
+    const result = await runDeployAppCommand(process.argv.slice(3), config, client);
     console.log(JSON.stringify(result, null, 2));
     process.exit(resolveExitCode(result));
   } catch (err) {

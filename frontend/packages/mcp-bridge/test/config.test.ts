@@ -14,6 +14,8 @@ test('loadConfig reads explicit user and agent context', () => {
     NUBASE_AGENT_ID: 'codex',
     NUBASE_USER_ID: 'user-1',
     NUBASE_RUN_ID: 'run-1',
+    NUBASE_PLATFORM_KEY: 'platform-key',
+    NUBASE_PLATFORM_JWT: 'platform-jwt',
     NUBASE_ALLOW_SQL_EXECUTE: 'true',
     NUBASE_ALLOW_ADMIN_WRITE: 'true',
   });
@@ -24,6 +26,8 @@ test('loadConfig reads explicit user and agent context', () => {
   assert.equal(config.agentId, 'codex');
   assert.equal(config.userId, 'user-1');
   assert.equal(config.runId, 'run-1');
+  assert.equal(config.platformKey, 'platform-key');
+  assert.equal(config.platformJwt, 'platform-jwt');
   assert.equal(config.allowSqlExecute, true);
   assert.equal(config.allowAdminWrite, true);
 });

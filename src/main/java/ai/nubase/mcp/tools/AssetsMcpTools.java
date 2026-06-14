@@ -100,6 +100,25 @@ public class AssetsMcpTools {
         }
     }
 
+    @Tool(description = "Update static asset delivery settings. Parameters: defaultCacheControl optional, customBaseUrl optional, spaFallbackPath optional, maxFileSizeBytes optional. Requires the service_role apikey.")
+    public Map<String, Object> assetsUpdateSettings(String defaultCacheControl, String customBaseUrl,
+                                                    String spaFallbackPath, Long maxFileSizeBytes) {
+        Map<String, Object> guard = checkEnabledAndServiceRole();
+        if (guard != null) {
+            return guard;
+        }
+        var request = new ai.nubase.assets.dto.UpdateAssetSettingsRequest();
+        request.setDefaultCacheControl(defaultCacheControl);
+        request.setCustomBaseUrl(customBaseUrl);
+        request.setSpaFallbackPath(spaFallbackPath);
+        request.setMaxFileSizeBytes(maxFileSizeBytes);
+        try {
+            return Map.of("success", true, "settings", assetsService.updateSettings(request));
+        } catch (AssetsException e) {
+            return Map.of("success", false, "error", e.getMessage());
+        }
+    }
+
     private Map<String, Object> checkEnabledAndServiceRole() {
         if (!assetsEnabled) {
             return Map.of("success", false, "error", "Assets module is disabled (nubase.assets.enabled=false)");

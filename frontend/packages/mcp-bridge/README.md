@@ -196,6 +196,7 @@ Core:
 - `nubase_capabilities`
 - `nubase_instructions`
 - `fetch_docs`
+- `deploy_app` — one-call generated-app deploy from a manifest object (SQL, Functions, Assets, cron, Memory)
 - `memory_context`
 - `memory_search`
 - `memory_write`
@@ -226,9 +227,101 @@ Backend ops (write, gated by `NUBASE_ALLOW_ADMIN_WRITE`):
 
 Deploy (write, gated by `NUBASE_ALLOW_ADMIN_WRITE`):
 
+- `deploy_app` — orchestrates SQL migrations, function deploys, frontend asset upload, cron jobs, and optional deployment memory
 - `assets_upload` / `assets_delete` — publish the generated frontend to the public CDN
 - `functions_new` / `functions_deploy` / `functions_invoke` / `functions_delete` / `functions_secrets_set` — deploy backend logic
 - `cron_create` / `cron_update` / `cron_delete` — schedule recurring jobs
+
+## App Deploy CLI
+
+Deploy a generated app from one manifest:
+
+```bash
+NUBASE_ALLOW_SQL_EXECUTE=true \
+NUBASE_ALLOW_ADMIN_WRITE=true \
+nubase_cli app deploy nubase.deploy.json
+```
+
+Example `nubase.deploy.json`:
+
+```json
+{
+  "name": "notes",
+  "migrations": [{ "name": "schema", "file": "schema.sql" }],
+  "functions": [
+    {
+      "name": "api",
+      "dir": "nubase/functions/api",
+      "verify": { "method": "GET" }
+    }
+  ],
+  "assets": {
+    "dir": "dist",
+    "cacheControl": "public, max-age=31536000"
+  },
+  "cron": [
+    {
+      "name": "nightly",
+      "cronExpression": "0 3 * * *",
+      "targetType": "edge_function",
+      "functionSlug": "api"
+    }
+  ],
+  "rememberDeployment": true
+}
+```
+
+The result includes `deploymentId`, per-step status, and `publicUrl` for the uploaded frontend.
+
+For static frontend releases, use:
+
+```json
+{
+  "assets": {
+    "dir": "dist",
+    "release": true,
+    "releaseId": "v1",
+    "spaFallback": true
+  }
+}
+```
+
+This uploads files under `__releases/<app>/<releaseId>/`, writes `__nubase_release.json`, and points SPA fallback at that release's `index.html`.
+
+`deploy_app` scans Assets and Function bundles before upload for obvious secrets (`.env`, private keys, service-role-looking JWTs, common API key formats). Set `"securityScan": false` only for a deliberate internal deploy where this is acceptable.
+The generated frontend must use the anon key from `project_keys`; never publish
+the service_role key in Assets.
+
+Inspect deployment records later:
+
+```text
+deployments_list({ "limit": 20 })
+deployment_status({ "id": "<deploymentId>" })
+deployment_logs({ "id": "<deploymentId>" })
+deployment_rollback({ "id": "<deploymentId>" })
+```
+
+`deployment_rollback` is a guarded write operation. It deletes recorded Assets and cron jobs, then appends rollback actions to the deployment logs. SQL migrations, Memory writes, function deploys, and secret updates are recorded as skipped because the bridge does not store enough prior state to reverse them safely.
+
+### Project lifecycle
+
+Project lifecycle tools use platform-level auth, not a tenant project key:
+
+```bash
+export NUBASE_PLATFORM_JWT=...
+# or
+export NUBASE_PLATFORM_KEY=...
+```
+
+Available tools:
+
+- `projects_list`
+- `project_keys_admin`
+- `project_provision`
+- `project_update`
+- `project_select_instructions`
+
+`project_provision` and `project_update` also require `NUBASE_ALLOW_ADMIN_WRITE=true`. Project delete is intentionally not exposed.
 
 ## Edge Functions CLI
 

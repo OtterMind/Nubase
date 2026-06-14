@@ -11,6 +11,7 @@ import java.time.Instant;
 public record AssetSettingsDTO(
         String defaultCacheControl,
         String customBaseUrl,
+        String spaFallbackPath,
         Long maxFileSizeBytes,
         long effectiveMaxFileSizeBytes,
         Instant updatedAt

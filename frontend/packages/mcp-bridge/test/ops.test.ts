@@ -6,6 +6,7 @@ import { NubaseClient } from '../src/nubase-client.js';
 interface CapturedRequest {
   url: string;
   method: string;
+  headers: Record<string, string>;
   body?: unknown;
 }
 
@@ -30,6 +31,7 @@ function makeClient(overrides: Partial<BridgeConfig> = {}) {
     calls.push({
       url: String(input),
       method: init?.method || 'GET',
+      headers: Object.fromEntries(new Headers(init?.headers).entries()),
       body: init?.body ? JSON.parse(String(init.body)) : undefined,
     });
     return new Response(JSON.stringify({ ok: true }), {
@@ -93,6 +95,73 @@ test('write ops call the admin API when enabled', async () => {
   assert.equal(nth(calls, 1).url, 'http://localhost:9999/auth/v1/admin/users/u-1?should_soft_delete=true');
   assert.equal(nth(calls, 2).url, 'http://localhost:9999/ai-gateway/admin/v1/keys');
   assert.deepEqual(nth(calls, 2).body, { name: 'ci' });
+});
+
+test('storage object helpers call list and signed URL endpoints', async () => {
+  const { client, calls, restore } = makeClient({ allowAdminWrite: true });
+  try {
+    await client.storageListObjects({
+      bucketId: 'avatars',
+      prefix: 'users/',
+      limit: 20,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+    await client.storageCreateSignedUrl({ bucketId: 'avatars', path: 'users/a b.png', expiresIn: 60 });
+    await client.storageCreateSignedUrls({ bucketId: 'avatars', paths: ['a.png', 'b.png'], expiresIn: 120 });
+    await client.storageCreateSignedUploadUrl({ bucketId: 'avatars', path: 'incoming/photo.png', upsert: true });
+  } finally {
+    restore();
+  }
+
+  assert.equal(nth(calls, 0).method, 'POST');
+  assert.equal(nth(calls, 0).url, 'http://localhost:9999/storage/v1/object/list/avatars');
+  assert.deepEqual(nth(calls, 0).body, {
+    prefix: 'users/',
+    limit: 20,
+    sortBy: { column: 'name', order: 'asc' },
+  });
+  assert.equal(nth(calls, 1).url, 'http://localhost:9999/storage/v1/object/sign/avatars/users/a%20b.png');
+  assert.deepEqual(nth(calls, 1).body, { expiresIn: 60 });
+  assert.equal(nth(calls, 2).url, 'http://localhost:9999/storage/v1/object/sign/avatars');
+  assert.deepEqual(nth(calls, 2).body, { paths: ['a.png', 'b.png'], expiresIn: 120 });
+  assert.equal(nth(calls, 3).url, 'http://localhost:9999/storage/v1/object/upload/sign/avatars/incoming/photo.png');
+  assert.equal(nth(calls, 3).headers['x-upsert'], 'true');
+});
+
+test('auth settings helpers call tenant settings endpoints', async () => {
+  const { client, calls, restore } = makeClient({ allowAdminWrite: true });
+  try {
+    await client.authGetSettings();
+    await client.authUpdateSettings({ settings: { signupEnabled: false, jwtExpirySeconds: 3600 } });
+    await client.authClearSettings();
+  } finally {
+    restore();
+  }
+
+  assert.equal(nth(calls, 0).method, 'GET');
+  assert.equal(nth(calls, 0).url, 'http://localhost:9999/auth/v1/admin/settings/auth');
+  assert.equal(nth(calls, 1).method, 'PUT');
+  assert.deepEqual(nth(calls, 1).body, { signupEnabled: false, jwtExpirySeconds: 3600 });
+  assert.equal(nth(calls, 2).method, 'DELETE');
+});
+
+test('gateway usage detail and pricing helpers call reporting endpoints', async () => {
+  const { client, calls, restore } = makeClient();
+  try {
+    await client.gatewayUsageDaily({ apiKeyId: 'key-1', startDate: '2026-06-01', endDate: '2026-06-02' });
+    await client.gatewayUsageByModel({ startDate: '2026-06-01', endDate: '2026-06-02' });
+    await client.gatewayUsageLogs({ apiKeyId: 'key-1', page: 1, size: 25 });
+    await client.gatewayPricing({});
+    await client.gatewayPricing({ all: true });
+  } finally {
+    restore();
+  }
+
+  assert.equal(nth(calls, 0).url, 'http://localhost:9999/ai-gateway/admin/v1/usage/daily?api_key_id=key-1&start_date=2026-06-01&end_date=2026-06-02');
+  assert.equal(nth(calls, 1).url, 'http://localhost:9999/ai-gateway/admin/v1/usage/by-model?start_date=2026-06-01&end_date=2026-06-02');
+  assert.equal(nth(calls, 2).url, 'http://localhost:9999/ai-gateway/admin/v1/usage/logs?api_key_id=key-1&page=1&size=25');
+  assert.equal(nth(calls, 3).url, 'http://localhost:9999/ai-gateway/admin/v1/pricing');
+  assert.equal(nth(calls, 4).url, 'http://localhost:9999/ai-gateway/admin/v1/pricing/all');
 });
 
 test('db_export_schema defaults to the public schema', async () => {
@@ -320,4 +389,116 @@ test('overview degrades a failing section to { error } without dropping the rest
 
   assert.ok('error' in result.storage, 'failing storage section should carry an error');
   assert.deepEqual(result.capabilities, { ok: true }, 'other sections still resolve');
+});
+
+test('deployment client methods call the deployment control plane', async () => {
+  const { client, calls, restore } = makeClient({ allowAdminWrite: true });
+  try {
+    await client.deploymentCreate({ appName: 'notes' });
+    await client.deploymentRecordStep({
+      deploymentId: 'dep-1',
+      stepOrder: 1,
+      stepName: 'assets_upload',
+      status: 'succeeded',
+    });
+    await client.deploymentComplete({ deploymentId: 'dep-1', status: 'succeeded', publicUrl: 'https://app.example' });
+    await client.deploymentsList({ limit: 10 });
+    await client.deploymentStatus({ id: 'dep-1' });
+    await client.deploymentLogs({ id: 'dep-1' });
+    await client.deploymentRollback({ id: 'dep-1' });
+  } finally {
+    restore();
+  }
+
+  assert.equal(nth(calls, 0).url, 'http://localhost:9999/deployments/admin/v1/deployments');
+  assert.equal(nth(calls, 0).method, 'POST');
+  assert.deepEqual(nth(calls, 0).body, { appName: 'notes' });
+  assert.equal(nth(calls, 1).url, 'http://localhost:9999/deployments/admin/v1/deployments/dep-1/steps');
+  assert.equal(nth(calls, 2).url, 'http://localhost:9999/deployments/admin/v1/deployments/dep-1/complete');
+  assert.equal(nth(calls, 3).url, 'http://localhost:9999/deployments/admin/v1/deployments?limit=10');
+  assert.equal(nth(calls, 4).url, 'http://localhost:9999/deployments/admin/v1/deployments/dep-1');
+  assert.equal(nth(calls, 5).url, 'http://localhost:9999/deployments/admin/v1/deployments/dep-1/logs');
+  assert.equal(nth(calls, 6).method, 'POST');
+  assert.equal(nth(calls, 6).url, 'http://localhost:9999/deployments/admin/v1/deployments/dep-1/rollback');
+});
+
+test('deployment rollback is blocked unless admin write is enabled', async () => {
+  const { client, calls, restore } = makeClient({ allowAdminWrite: false });
+  try {
+    const result = (await client.deploymentRollback({ id: 'dep-1' })) as {
+      success: boolean;
+      code: string;
+    };
+    assert.equal(result.success, false);
+    assert.equal(result.code, 'PERMISSION_GATE_OFF');
+    assert.equal(calls.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test('project lifecycle tools require platform auth', async () => {
+  const { client, calls, restore } = makeClient();
+  try {
+    const result = (await client.projectsList()) as Record<string, any>;
+    assert.equal(result.success, false);
+    assert.equal(result.code, 'PLATFORM_AUTH_REQUIRED');
+    assert.equal(calls.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test('project lifecycle tools use platform key or jwt auth', async () => {
+  const config: BridgeConfig = {
+    nubaseUrl: 'http://localhost:9999',
+    projectKey: 'service-role-key',
+    platformKey: 'metadata-key',
+    allowSqlExecute: false,
+    allowDangerousSql: false,
+    allowAdminWrite: true,
+  };
+  const seen: Array<{ url: string; method: string; headers: Record<string, string>; body?: unknown }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    seen.push({
+      url: String(input),
+      method: init?.method || 'GET',
+      headers: Object.fromEntries(new Headers(init?.headers).entries()),
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+  try {
+    const client = new NubaseClient(config);
+    await client.projectsList();
+    await client.projectKeysAdmin({ ref: 'proj_1' });
+    await client.projectProvision({ ref: 'proj_1' });
+    await client.projectUpdate({ ref: 'proj_1', appName: 'Notes', enabled: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(seen[0]?.url, 'http://localhost:9999/auth/v1/admin/projects');
+  assert.equal(seen[0]?.headers.apikey, 'metadata-key');
+  assert.equal(seen[1]?.url, 'http://localhost:9999/auth/v1/admin/projects/proj_1/keys');
+  assert.equal(seen[2]?.method, 'POST');
+  assert.equal(seen[2]?.url, 'http://localhost:9999/auth/v1/admin/projects/proj_1/provision');
+  assert.equal(seen[3]?.method, 'PATCH');
+  assert.deepEqual(seen[3]?.body, { appName: 'Notes', enabled: true });
+});
+
+test('project lifecycle write tools are gated by admin write', async () => {
+  const { client, calls, restore } = makeClient({ platformKey: 'metadata-key', allowAdminWrite: false });
+  try {
+    const result = (await client.projectProvision({ ref: 'proj_1' })) as Record<string, any>;
+    assert.equal(result.success, false);
+    assert.equal(result.code, 'PERMISSION_GATE_OFF');
+    assert.equal(calls.length, 0);
+  } finally {
+    restore();
+  }
 });

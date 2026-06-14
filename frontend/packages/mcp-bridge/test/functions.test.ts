@@ -262,6 +262,45 @@ test('functions deploy prunes node_modules and .git before walking', async () =>
   assert.deepEqual(paths.sort(), ['helper.js', 'index.js', 'nubase-function.json']);
 });
 
+test('functions deploy blocks private key material before upload', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'nubase-functions-'));
+  const cwd = process.cwd();
+  const calls: string[] = [];
+  try {
+    process.chdir(dir);
+    const fnDir = path.join(dir, 'nubase/functions/hello');
+    await mkdir(fnDir, { recursive: true });
+    await writeFile(path.join(fnDir, 'index.js'), 'export default { fetch() { return new Response("ok"); } };\n');
+    await writeFile(path.join(fnDir, 'key.pem'), '-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----\n');
+    await assert.rejects(
+      () => runFunctionsCommand(['deploy', 'hello'], config(), fakeClient(calls)),
+      /Security scan blocked upload/
+    );
+  } finally {
+    process.chdir(cwd);
+    await rm(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(calls, [], 'blocked function deploy must not reach the client');
+});
+
+test('functions deploy can explicitly bypass security scan', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'nubase-functions-'));
+  const cwd = process.cwd();
+  const calls: string[] = [];
+  try {
+    process.chdir(dir);
+    const fnDir = path.join(dir, 'nubase/functions/hello');
+    await mkdir(fnDir, { recursive: true });
+    await writeFile(path.join(fnDir, 'index.js'), 'export default { fetch() { return new Response("ok"); } };\n');
+    await writeFile(path.join(fnDir, 'key.pem'), '-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----\n');
+    await runFunctionsCommand(['deploy', 'hello', '--no-security-scan'], config(), fakeClient(calls));
+  } finally {
+    process.chdir(cwd);
+    await rm(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(calls, ['create:hello', 'deploy:hello']);
+});
+
 test('resolveExitCode maps refusals to 1 and everything else to 0', () => {
   assert.equal(resolveExitCode({ success: false, code: 'PERMISSION_GATE_OFF' }), 1);
   assert.equal(resolveExitCode({ ok: true }), 0);
