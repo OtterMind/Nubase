@@ -391,6 +391,7 @@ public class AdminController {
      * - PostgreSQL host and port are configured in application.yml (pgrst.multidb.postgres.host/port)
      * - No need to provide admin credentials or connection details
      */
+    @RequireServiceRole
     @PostMapping("/admin/init/database")
     public ResponseEntity<InitDatabaseResponse> initDatabase(@Valid @RequestBody InitDatabaseRequest request,
                                                              HttpServletRequest httpRequest) {
@@ -411,6 +412,7 @@ public class AdminController {
      * @param request
      * @return
      */
+    @RequireServiceRole
     @PostMapping("/admin/init/database_config")
     public ResponseEntity<InitDatabaseResponse> initDatabaseConfig(@Valid @RequestBody InitDatabaseRequest request,
                                                                    HttpServletRequest httpRequest) {

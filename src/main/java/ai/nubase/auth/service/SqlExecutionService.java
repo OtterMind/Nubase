@@ -3,6 +3,7 @@ package ai.nubase.auth.service;
 import ai.nubase.auth.dto.request.admin.ExecuteSqlRequest;
 import ai.nubase.auth.dto.response.admin.SqlExecutionResponse;
 import ai.nubase.common.context.MultiTenancyContext;
+import ai.nubase.common.util.SqlSafe;
 import ai.nubase.metadata.entity.SqlExecutionRecord;
 import ai.nubase.metadata.repository.SqlExecutionRecordRepository;
 import cn.hutool.json.JSONUtil;
@@ -76,14 +77,18 @@ public class SqlExecutionService {
         try {
             // Set search_path
             if (!CollectionUtils.isEmpty(dbSchemas)) {
-                String joinedSchemas = String.join(", ", dbSchemas);
-                if (!joinedSchemas.contains("public")) {
-                    joinedSchemas += ", public";
+                StringBuilder sp = new StringBuilder();
+                boolean hasPublic = false;
+                for (String s : dbSchemas) {
+                    if (sp.length() > 0) sp.append(", ");
+                    sp.append(SqlSafe.ident(s));
+                    if ("public".equals(s)) hasPublic = true;
                 }
-                jdbcTemplate.execute("SET search_path TO " + joinedSchemas);
+                if (!hasPublic) sp.append(", ").append(SqlSafe.ident("public"));
+                jdbcTemplate.execute("SET search_path TO " + sp);
             } else {
                 if (schema != null && !schema.isBlank()) {
-                    jdbcTemplate.execute("SET search_path TO " + schema + ", public");
+                    jdbcTemplate.execute("SET search_path TO " + SqlSafe.ident(schema) + ", " + SqlSafe.ident("public"));
                 }
             }
 

@@ -125,12 +125,12 @@ nubase:
       expiration: 2592000  # 30 days, in seconds
       rotation: true
 
-    # Password configuration
+    # Password configuration (safer defaults for self-hosters; override per deployment)
     password:
-      min-length: 6
+      min-length: 8
       require-uppercase: false
-      require-lowercase: false
-      require-number: false
+      require-lowercase: true
+      require-number: true
       require-special: false
 
     # Email configuration

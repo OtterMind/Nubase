@@ -3,6 +3,7 @@ package ai.nubase.auth.service;
 import ai.nubase.auth.dto.response.admin.InitSchemaResponse;
 import ai.nubase.auth.dto.request.admin.InitSchemaRequest;
 import ai.nubase.common.enums.Role;
+import ai.nubase.common.util.SqlSafe;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
@@ -106,7 +107,7 @@ public class SchemaInitService {
      * Create a new PostgreSQL schema
      */
     private void createSchema(String schema) {
-        String sql = String.format("CREATE SCHEMA IF NOT EXISTS %s", schema);
+        String sql = String.format("CREATE SCHEMA IF NOT EXISTS %s", SqlSafe.ident(schema));
         entityManager.createNativeQuery(sql).executeUpdate();
         log.info("Schema '{}' created", schema);
     }
@@ -150,7 +151,7 @@ public class SchemaInitService {
     private void executeSqlScript(String sqlScript, String schema) {
         // Set search_path if schema is provided
         if (schema != null && !schema.isBlank()) {
-            String setSearchPath = String.format("SET search_path TO %s, public", schema);
+            String setSearchPath = String.format("SET search_path TO %s, public", SqlSafe.ident(schema));
             entityManager.createNativeQuery(setSearchPath).executeUpdate();
             log.debug("Set search_path to: {}", schema);
         }

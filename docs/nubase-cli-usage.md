@@ -94,7 +94,7 @@ cb9166e3a0b93b16032c0ed45b6ca947fcada25d90d6368fc5558cd918103e2b
 ### 从本地 tgz 安装
 
 ```bash
-npm install -g /Users/ji/IdeaProjects/nubase_open/frontend/packages/mcp-bridge/nubase_cli-0.1.7.tgz
+npm install -g /path/to/nubase/frontend/packages/mcp-bridge/nubase_cli-0.1.7.tgz
 ```
 
 安装后可直接运行：
@@ -372,7 +372,7 @@ NUBASE_ALLOW_ADMIN_WRITE=true
 ## 7. 打包和验证命令
 
 ```bash
-cd /Users/ji/IdeaProjects/nubase_open/frontend
+cd /path/to/nubase/frontend
 pnpm --filter nubase_cli typecheck
 pnpm --filter nubase_cli build
 pnpm --filter nubase_cli test
@@ -405,7 +405,7 @@ npx -y nubase_cli@latest install-skills
 如果 npm 还没有发布新版，先用本地包测试：
 
 ```bash
-npm install -g /Users/ji/IdeaProjects/nubase_open/frontend/packages/mcp-bridge/nubase_cli-0.1.7.tgz
+npm install -g /path/to/nubase/frontend/packages/mcp-bridge/nubase_cli-0.1.7.tgz
 nubase_cli install-skills
 ```
 
@@ -474,7 +474,7 @@ npx -y nubase_cli@latest install-skills --no-authorize
 确认 package 后执行：
 
 ```bash
-cd /Users/ji/IdeaProjects/nubase_open/frontend/packages/mcp-bridge
+cd /path/to/nubase/frontend/packages/mcp-bridge
 npm publish --access public
 ```
 

@@ -4,6 +4,7 @@ import ai.nubase.auth.dto.request.admin.InitDatabaseRequest;
 import ai.nubase.auth.dto.response.admin.InitDatabaseResponse;
 import ai.nubase.common.enums.DatabaseInitStatus;
 import ai.nubase.common.enums.Role;
+import ai.nubase.common.util.SqlSafe;
 import ai.nubase.postgrest.multidb.DatabaseConfig;
 import ai.nubase.postgrest.multidb.DatabaseConfigRepository;
 import ai.nubase.postgrest.multidb.EncryptionService;
@@ -772,23 +773,23 @@ public class DatabaseInitService {
 
         try {
             // Create the database
-            String createDbSql = String.format("CREATE DATABASE %s ENCODING 'UTF8'", dbName);
+            String createDbSql = String.format("CREATE DATABASE %s ENCODING 'UTF8'", SqlSafe.ident(dbName));
             metadataJdbcTemplate.execute(createDbSql);
             log.info("Created database: {}", dbName);
             executedSteps.add("Created database: " + dbName);
 
             // Create the user
-            String createUserSql = String.format("CREATE USER %s WITH PASSWORD '%s'", dbUser, dbPassword);
+            String createUserSql = String.format("CREATE USER %s WITH PASSWORD %s", SqlSafe.ident(dbUser), SqlSafe.literal(dbPassword));
             metadataJdbcTemplate.execute(createUserSql);
             log.info("Created user: {}", dbUser);
             executedSteps.add("Created user: " + dbUser);
 
             // Grant privileges
-            String grantSql = String.format("GRANT ALL PRIVILEGES ON DATABASE %s TO %s", dbName, dbUser);
+            String grantSql = String.format("GRANT ALL PRIVILEGES ON DATABASE %s TO %s", SqlSafe.ident(dbName), SqlSafe.ident(dbUser));
             metadataJdbcTemplate.execute(grantSql);
 
             // Grant owner privileges
-            String ownerSql = String.format("ALTER DATABASE  %s OWNER TO  %s", dbName, dbUser);
+            String ownerSql = String.format("ALTER DATABASE %s OWNER TO %s", SqlSafe.ident(dbName), SqlSafe.ident(dbUser));
             metadataJdbcTemplate.execute(ownerSql);
             log.info("Granted all privileges on database {} to user {}", dbName, dbUser);
 

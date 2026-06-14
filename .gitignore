@@ -98,3 +98,11 @@ script/deploy/apisix-www-routes.sh
 /script/deploy/nubase-www.service
 cloudflare/functions-dispatcher/wrangler.toml
 cloudflare/functions-dispatcher/.wrangler/
+
+# Dependencies & build output (safety net — large, machine-specific, regenerated)
+node_modules/
+**/node_modules/
+**/.next/
+.pnpm-store/
+**/.turbo/
+**/*.tsbuildinfo
