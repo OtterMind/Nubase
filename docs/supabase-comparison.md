@@ -34,7 +34,10 @@ https://supabase.com/docs
 | Auth | GoTrue | GoTrue | Supabase-style Auth implemented in Java |
 | Storage | Supabase Storage | Supabase Storage | S3/R2-compatible storage service |
 | Realtime | Yes | Yes in Supabase stack | Not implemented yet |
-| Edge Functions | Yes | Yes in Supabase stack | Initial Spring gateway + pluggable executor |
+| Edge Functions | Yes | Yes in Supabase stack | Gateway + executor (local / Cloudflare WfP) |
+| Static frontend hosting | Separate (e.g. Vercel) | Separate | Built-in Assets CDN (`/assets/v1`) |
+| Scheduled jobs (cron) | pg_cron / separate | pg_cron | Built-in control-plane cron |
+| Deploy a generated app | App + separate host/Functions/cron | Self-managed stack | Frontend + backend + cron, one platform, agent-driven |
 | AI memory | Not a core product primitive | Not a core product primitive | Built-in Memory pillar |
 | AI Coding workflow | General backend platform | General backend stack | REST + Memory + MCP tools + Studio |
 | Implementation | Supabase services | Supabase Docker stack | Spring Boot backend + Next.js Studio |
@@ -70,6 +73,10 @@ Nubase Memory includes:
 - memory history
 - entity browser
 - per-user authorization
+
+### Complete AI-app deployment from one platform
+
+Shipping a generated app on Supabase usually means Supabase (data/auth/storage) **plus** a separate frontend host (e.g. Vercel) **plus** a scheduler. Nubase keeps the whole deploy surface together: an agent publishes the frontend (Assets), deploys backend logic (Functions), and schedules recurring work (cron) through the same MCP tools and project token model — generate → live without stitching three services together. See [deploy-ai-generated-apps.md](deploy-ai-generated-apps.md).
 
 ### AI Coding backend surface
 
@@ -147,7 +154,7 @@ Choose Nubase when:
 Choose Supabase when:
 
 - you need mature Realtime today
-- you need Edge Functions today
+- you need full Edge Functions runtime parity and the broader Deno/edge ecosystem today
 - you want managed backups and PITR
 - you want the largest ecosystem and client-library support
 - you prefer a fully managed platform

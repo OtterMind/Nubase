@@ -4,7 +4,7 @@ Use this guide to connect Codex, Claude Code, Cursor, IDEA, or another MCP-capab
 
 Nubase exposes two separate surfaces:
 
-- **Tools / MCP**: lets agents operate Nubase Memory, Database, Auth, and Storage.
+- **Tools / MCP**: lets agents operate Nubase Memory, Database, Auth, and Storage, and **deploy** generated apps — publish frontends (Assets), deploy backend logic (Functions), and schedule jobs (cron).
 - **Model Gateway**: lets agents route model calls through Nubase AI Gateway.
 
 Some clients support both. Some support only MCP tools or only custom model base URLs.
@@ -53,6 +53,9 @@ Installed structure:
 - `references/memory.md`
 - `references/database.md`
 - `references/auth-storage.md`
+- `references/assets.md` — publish the generated frontend
+- `references/functions.md` — deploy backend logic
+- `references/cron.md` — schedule recurring jobs
 - `references/ai-gateway.md`
 - `references/security.md`
 
@@ -179,9 +182,10 @@ Use the stdio bridge when Codex expects a local MCP command:
 Recommended first prompt:
 
 ```text
-Use the nubase MCP server. First call memoryContext with agentId=codex and this task.
+Use the nubase MCP server. First call nubase_overview, then memory_context with this task.
 Before changing database schema, inspect existing tables and policies.
-Write durable project decisions with memoryWrite.
+To deploy: functions_deploy for backend logic, assets_upload to publish the frontend, cron_create to schedule jobs.
+Write durable project decisions with memory_write.
 ```
 
 ## Claude Code
@@ -245,7 +249,7 @@ Use the stdio bridge in Cursor's MCP configuration:
 Recommended workspace rule:
 
 ```text
-Use Nubase as the backend. Use MCP memoryContext before planning. Use REST /rest/v1 for app data and never expose service_role keys in client code.
+Use Nubase as the backend. Call nubase_overview, then memory_context before planning. Use REST /rest/v1 for app data, deploy logic with functions_deploy, publish the frontend with assets_upload, and never expose service_role keys in client code.
 ```
 
 ## IDEA / JetBrains
@@ -306,9 +310,17 @@ For generated frontend apps, prefer the `authenticated` or `anon` project token 
 ## Recommended Agent Startup Flow
 
 1. Call the `nubase_overview` MCP tool first. One call returns capabilities, database schema, storage buckets, auth users, AI Gateway keys, the active permission gates, and suggested next steps — no need to call `capabilities` + schema + buckets + users + keys separately. (Without the MCP bridge, fall back to `GET /agent/v1/capabilities`.)
-2. Call `memoryContext(agentId, task)`.
+2. Call `memory_context({ task })`.
 3. Inspect the schema returned by `nubase_overview` (or `db_export_schema`) before writing SQL; `sql_dry_run` before `sql_execute`.
 4. Use `/rest/v1`, `/auth/v1`, and `/storage/v1` for generated app code.
-5. Write durable decisions with `memoryWrite`.
-6. Use AI Gateway env vars only for model routing.
+
+When the task is to **deploy** a generated app, continue (deploy tools need `NUBASE_ALLOW_ADMIN_WRITE=true` and the service_role key):
+
+5. Deploy backend logic with `functions_new` → `functions_deploy` → `functions_invoke`.
+6. Publish the generated frontend with `assets_upload`; open the returned `publicUrl`.
+7. Schedule recurring work with `cron_create` (after verifying the function).
+8. Route any LLM calls through the AI Gateway env vars.
+9. Write durable decisions (schema, deployed functions, asset paths, cron jobs) with `memory_write`.
+
+See [Deploy an AI-generated app](deploy-ai-generated-apps.md) for the full walkthrough.
 

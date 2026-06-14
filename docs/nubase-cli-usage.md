@@ -1,6 +1,6 @@
 # nubase_cli 使用文档
 
-`nubase_cli` 是 Nubase 的本地 stdio MCP bridge。它让 Codex、Claude Code、Cursor、IDEA 等支持 MCP 的 Agent 连接到 Nubase 项目，并通过工具调用操作 Memory、Database、Auth、Storage 和 AI Gateway。
+`nubase_cli` 是 Nubase 的本地 stdio MCP bridge。它让 Codex、Claude Code、Cursor、IDEA 等支持 MCP 的 Agent 连接到 Nubase 项目，并通过工具调用操作 Memory、Database、Auth、Storage、AI Gateway，以及把生成的应用**部署上线**——发布前端（Assets）、部署后端逻辑（Functions）、配置定时任务（cron）。
 
 当前打包版本：
 
@@ -31,12 +31,6 @@ cb9166e3a0b93b16032c0ed45b6ca947fcada25d90d6368fc5558cd918103e2b
 - `nubase_instructions`：返回给 Agent 的安全使用说明。
 - `fetch_docs`：读取内置文档，topic 包括 `overview`、`quickstart`、`setup`、`memory`、`database`、`auth`、`storage`、`ai_gateway`、`security`、`all`。
 
-### Memory
-
-- `memory_context`：按任务获取相关长期记忆上下文，适合作为 Agent 开始任务时第一步。
-- `memory_search`：搜索长期记忆。
-- `memory_write`：写入长期记忆，可用于记录项目约定、设计决策、排障结论。
-
 ### Database
 
 - `rest_select`：通过 `/rest/v1` 查询表数据。
@@ -45,17 +39,33 @@ cb9166e3a0b93b16032c0ed45b6ca947fcada25d90d6368fc5558cd918103e2b
 - `db_export_schema`：导出 schema/table DDL。
 - `db_list_migrations`：查看通过 `sql_execute` 记录的 schema 变更审计。
 
+### Auth
+
+- `auth_list_users`：列出用户。
+- `auth_create_user`：创建用户，默认关闭，需要 admin write 开关。
+- `auth_delete_user`：删除用户，默认关闭，需要 admin write 开关。
+
 ### Storage
 
 - `storage_list_buckets`：列出 bucket。
 - `storage_create_bucket`：创建 bucket，默认关闭，需要 admin write 开关。
 - `storage_delete_bucket`：删除 bucket，默认关闭，需要 admin write 开关。
 
-### Auth
+### Assets（发布前端）
 
-- `auth_list_users`：列出用户。
-- `auth_create_user`：创建用户，默认关闭，需要 admin write 开关。
-- `auth_delete_user`：删除用户，默认关闭，需要 admin write 开关。
+- `assets_list`：列出已发布的静态资源及其公开 URL。
+- `assets_upload`：发布静态资源到公开 CDN（`/assets/v1/<path>`），文本传 `content`、二进制传 `contentBase64`，Content-Type 可从路径推断；默认关闭，需要 admin write 开关，返回公开 URL。
+- `assets_delete`：删除资源，需要 admin write 开关。
+
+### Functions（部署后端逻辑）
+
+- `functions_list`：列出已部署的 edge function。
+- `functions_new`：在本地 `nubase/functions/<name>` 脚手架一个函数（只写本地文件）。
+- `functions_deploy`：打包并部署本地函数，默认关闭，需要 admin write 开关。
+- `functions_invoke`：调用已部署函数（`/functions/v1`），返回 `{status, headers, body}`，默认关闭，需要 admin write 开关。
+- `functions_logs`：查看调用日志。
+- `functions_delete`：删除函数，需要 admin write 开关。
+- `functions_secrets_list` / `functions_secrets_set`：管理函数密钥（list 只返回名字，set 需要 admin write 开关）。
 
 ### AI Gateway
 
@@ -64,7 +74,20 @@ cb9166e3a0b93b16032c0ed45b6ca947fcada25d90d6368fc5558cd918103e2b
 - `gateway_revoke_key`：吊销 AI Gateway key，默认关闭，需要 admin write 开关。
 - `gateway_usage`：查看 token、请求数、费用等使用概览。
 
-Nubase 当前没有 serverless/edge function runtime，所以 CLI 不提供函数部署工具。
+### Memory
+
+- `memory_context`：按任务获取相关长期记忆上下文，适合作为 Agent 开始任务时第一步。
+- `memory_search`：搜索长期记忆。
+- `memory_write`：写入长期记忆，可用于记录项目约定、设计决策、排障结论。
+
+### cron（定时任务）
+
+- `cron_list` / `cron_get`：查看定时任务。
+- `cron_create`：创建任务，`targetType` 为 `edge_function`（配 `functionSlug`）或 `db_function`（配 `dbFunctionName`）；默认关闭，需要 admin write 开关。
+- `cron_update` / `cron_delete`：更新/删除任务，需要 admin write 开关。
+- `cron_runs`：查看运行历史（传 name 看单个任务，省略看全项目）。
+
+也可以用 CLI 子命令直接操作：`nubase_cli functions ...`、`nubase_cli assets ...`、`nubase_cli cron ...`（写操作需 `NUBASE_ALLOW_ADMIN_WRITE=true`）。完整的 generate → 上线流程见 [deploy-ai-generated-apps.md](deploy-ai-generated-apps.md)。
 
 ## 2. 安装和授权
 
@@ -306,6 +329,19 @@ Use the nubase MCP server. First call nubase_overview. Use memory_context for re
 5. 确认后再 `sql_execute`
 6. 完成后用 `memory_write` 记录关键决策
 
+### 把生成的应用部署上线
+
+开启 `NUBASE_ALLOW_ADMIN_WRITE=true`（以及改 schema 时的 `NUBASE_ALLOW_SQL_EXECUTE=true`），用 service_role key 连接后：
+
+1. 建表 + RLS（`sql_dry_run` → `sql_execute`），用 `auth_*` 管理用户
+2. `functions_new` → `functions_deploy` → `functions_invoke` 部署并验证后端逻辑
+3. `assets_upload` 发布生成的前端，打开返回的 `publicUrl`
+4. `cron_create` 配置定时任务（先验证函数再调度）
+5. LLM 调用走 AI Gateway
+6. `memory_write` 记录部署事实（schema、函数 slug、资源路径、cron 任务）
+
+完整流程见 [deploy-ai-generated-apps.md](deploy-ai-generated-apps.md)。
+
 ### 只读排查
 
 允许默认配置即可，不开启写开关。Agent 可以：
@@ -326,12 +362,12 @@ NUBASE_ALLOW_ADMIN_WRITE=true
 
 然后 Agent 才能调用：
 
-- `storage_create_bucket`
-- `storage_delete_bucket`
-- `auth_create_user`
-- `auth_delete_user`
-- `gateway_issue_key`
-- `gateway_revoke_key`
+- `storage_create_bucket` / `storage_delete_bucket`
+- `auth_create_user` / `auth_delete_user`
+- `gateway_issue_key` / `gateway_revoke_key`
+- `functions_deploy` / `functions_invoke` / `functions_delete` / `functions_secrets_set`
+- `assets_upload` / `assets_delete`
+- `cron_create` / `cron_update` / `cron_delete`
 
 ## 7. 打包和验证命令
 

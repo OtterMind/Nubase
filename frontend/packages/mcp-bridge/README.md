@@ -207,16 +207,28 @@ Backend ops (read):
 
 - `db_export_schema` — export table DDL for a schema (default `public`)
 - `db_list_migrations` — audit trail of schema changes applied via `sql_execute` (most recent first)
-- `storage_list_buckets`
 - `auth_list_users`
+- `storage_list_buckets`
 - `gateway_list_keys` — list AI Gateway `nbk_` keys
 - `gateway_usage` — token/request/cost overview
 
+Deploy (read):
+
+- `assets_list` — published static assets and their public URLs
+- `functions_list` / `functions_logs` / `functions_secrets_list` — Edge Functions
+- `cron_list` / `cron_get` / `cron_runs` — scheduled jobs and run history
+
 Backend ops (write, gated by `NUBASE_ALLOW_ADMIN_WRITE`):
 
-- `storage_create_bucket` / `storage_delete_bucket`
 - `auth_create_user` / `auth_delete_user`
+- `storage_create_bucket` / `storage_delete_bucket`
 - `gateway_issue_key` / `gateway_revoke_key`
+
+Deploy (write, gated by `NUBASE_ALLOW_ADMIN_WRITE`):
+
+- `assets_upload` / `assets_delete` — publish the generated frontend to the public CDN
+- `functions_new` / `functions_deploy` / `functions_invoke` / `functions_delete` / `functions_secrets_set` — deploy backend logic
+- `cron_create` / `cron_update` / `cron_delete` — schedule recurring jobs
 
 ## Edge Functions CLI
 
@@ -254,6 +266,20 @@ nubase_cli cron runs --limit 50
 ```
 
 `--args` must be a JSON object; `name` and `--target` are immutable after create. Writes require `NUBASE_ALLOW_ADMIN_WRITE=true`.
+
+## Assets CLI
+
+Publish a generated frontend (HTML/CSS/JS, images, fonts) to the project's public CDN, served at `/assets/v1/<path>` (`/assets/admin/v1`):
+
+```bash
+nubase_cli assets list --prefix css/ --limit 100
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli assets upload index.html --file ./dist/index.html
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli assets upload css/app.css --file ./dist/css/app.css --cache-control "public, max-age=31536000"
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli assets upload robots.txt --content "User-agent: *"
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli assets delete css/old.css
+```
+
+Pass either `--file <localPath>` (any file type, sent as bytes) or `--content <text>` for inline text. `Content-Type` is inferred from the asset path when `--content-type` is omitted. Upload upserts by default; `--create` makes it fail if the path already exists. The response includes the resolved `publicUrl`. Writes require `NUBASE_ALLOW_ADMIN_WRITE=true` and the project's service_role key.
 
 ## Publish
 

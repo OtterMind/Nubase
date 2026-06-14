@@ -4,9 +4,9 @@
 [![npm](https://img.shields.io/npm/v/nubase_cli?logo=npm&label=nubase_cli&color=cb3837)](https://www.npmjs.com/package/nubase_cli)
 [![GitHub stars](https://img.shields.io/github/stars/OtterMind/Nubase?style=social)](https://github.com/OtterMind/Nubase)
 
-**Backend services born for AI.** Nubase is an open-source, AI-native backend platform — **Memory, Database, Storage, and Auth** in one self-hostable service. Give AI-generated apps and coding agents a real backend, so they can go from prototype to production without rebuilding the same infrastructure every time.
+**Turn AI-written code into real apps.** Nubase is an open-source, AI-native backend **and deploy layer** that a coding agent drives directly — so a generated app goes live in minutes. Eight capability modules in one self-hostable service: **Database, Auth, Storage, Assets, Functions, AI Gateway, Memory, and cron**.
 
-> Supabase-style where it makes sense (Postgres, REST, JWTs, RLS, object storage, a Studio dashboard) — plus first-class **Memory**, an **MCP** surface built for AI coding agents, and **multi-project** self-hosting.
+> An agent can model the data (Database + Auth), deploy backend logic (**Functions**), publish the generated frontend to a public CDN (**Assets**), and schedule recurring work (**cron**) — all through MCP tools, with no separate hosting account. Supabase-style where it makes sense (Postgres, REST, JWTs, RLS, object storage, a Studio dashboard), plus first-class **Memory** and an **MCP** surface built for AI coding agents.
 
 ---
 
@@ -56,9 +56,11 @@ docker run -d --name nubase \
 
 ### 3. Build with your agent
 
-Your agent can now operate Nubase directly through MCP tools — inspect schema, create tables, run SQL, manage auth & storage, and read/write durable **memory**. Try asking:
+Your agent can now operate Nubase directly through MCP tools — inspect schema, create tables, run SQL, manage auth & storage, **deploy edge functions, publish a frontend to the public CDN, schedule cron jobs**, and read/write durable **memory**. Try asking:
 
-> "Create a `todos` table with Row Level Security, insert a few rows via the REST API, and remember that this project uses soft deletes."
+> "Create a `todos` table with RLS, deploy an edge function that returns the open count, publish a one-page UI to Assets that calls it, and remember the deployment."
+
+See [Deploy an AI-generated app](docs/deploy-ai-generated-apps.md) for the full generate → live walkthrough.
 
 ---
 
@@ -101,12 +103,14 @@ Supabase is excellent, but its open-source self-hosted stack is designed around 
 
 ## Core Features
 
-- **🧠 Memory** — Mem0-style memory API; LLM-powered fact extraction (ADD/UPDATE/DELETE/NONE); hybrid retrieval over pgvector + Postgres full-text + entity boost; entity store and append-only history. Works with OpenAI, Anthropic, and OpenAI-compatible providers.
 - **🗄️ Database** — one isolated PostgreSQL per project; a PostgREST-compatible `/rest/v1` API (select/filter/order/paginate/insert/update/upsert/delete); per-project JWT secrets, roles, and schema cache; Row Level Security with JWT claims.
 - **🔐 Auth** — Supabase-style signup/login and refresh-token rotation; MFA/TOTP, OTP & magic links, anonymous sign-in; OAuth (Google / GitHub / WeChat) and SAML SSO; per-project `anon` / `authenticated` / `service_role` tokens.
 - **📦 Storage** — S3-compatible (Cloudflare R2 / AWS S3 / MinIO); public/private buckets, signed URLs, size & MIME controls; optional S3 Vectors for large document/asset workloads.
-- **🌐 Assets (static CDN)** — per-project public static assets served at `/assets/v1/**` with Cache-Control/ETag/304 semantics; per-project default cache policy and custom CDN domain; agents publish assets directly over MCP.
+- **🌐 Assets (static CDN)** — publish a generated frontend: per-project public static assets served at `/assets/v1/**` with Cache-Control/ETag/304 semantics; per-project default cache policy and custom CDN domain; agents publish directly over MCP (`assets_upload`).
+- **⚡ Functions** — deploy backend logic as edge functions served at `/functions/v1/**`; per-function secrets, invocation logs, rate limits, `verify_jwt`; local executor or Cloudflare Workers for Platforms; agents scaffold/deploy/invoke over MCP (`functions_deploy`).
 - **🤖 AI Gateway** — OpenAI- and Anthropic-compatible endpoints with per-project keys and token/cost usage tracking.
+- **🧠 Memory** — Mem0-style memory API; LLM-powered fact extraction (ADD/UPDATE/DELETE/NONE); hybrid retrieval over pgvector + Postgres full-text + entity boost; entity store and append-only history. Works with OpenAI, Anthropic, and OpenAI-compatible providers.
+- **⏰ Scheduled Jobs (cron)** — recurring jobs that invoke an edge function or a named database function on a crontab schedule, run by the control plane with run history; managed over MCP (`cron_create`).
 - **🧰 AI Coding & Agents** — an MCP bridge (`nubase_cli`) for schema inspection, SQL execution, RLS export, project init, and memory; one consistent project-token model across Auth, REST, Storage, and Memory.
 - **🎛️ Studio** — a Next.js dashboard for projects, SQL (with execution history), users, storage, and the memory explorer.
 
@@ -126,7 +130,9 @@ Supabase is excellent, but its open-source self-hosted stack is designed around 
 | Storage | Yes | Yes | S3/R2-compatible |
 | AI memory | Not a core primitive | Not a core primitive | **Built-in Memory pillar** |
 | AI coding backend target | General primitives | General primitives | **Memory + REST + MCP + Studio** |
-| Realtime / Edge Functions | Yes | Available in stack | Edge Functions initial gateway; Realtime not yet |
+| Deploy a generated app | App + separate hosting/Functions/cron | Self-managed stack | **Frontend (Assets) + backend (Functions) + cron, one platform** |
+| Edge Functions | Yes | Available in stack | **Gateway + executor (local / Cloudflare WfP)** |
+| Realtime | Yes | Available in stack | Not yet |
 
 </details>
 
@@ -188,8 +194,10 @@ curl -X POST "http://localhost:9999/rest/v1/todos" \
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
+- [Deploy an AI-generated app (generate → live)](docs/deploy-ai-generated-apps.md)
 - [Connect agents (Claude / Codex / Cursor)](docs/agent-connect.md)
 - [MCP & agent guide](docs/mcp.md)
+- [Edge Functions](docs/edge-functions.md) · [Assets (static CDN)](docs/assets.md) · [Scheduled Jobs (cron)](docs/scheduled-jobs.md)
 - [nubase_cli usage](docs/nubase-cli-usage.md)
 - [All-in-one Docker image](docs/docker-all-in-one.md)
 - [Architecture](docs/architecture.md)
@@ -198,7 +206,7 @@ curl -X POST "http://localhost:9999/rest/v1/todos" \
 
 ## Status & roadmap
 
-Nubase is early-stage but the core pillars (Memory, Database, Auth, Storage, AI Gateway, Edge Functions gateway, Studio, MCP) are in place. Not yet implemented: **Realtime** and operational extras like backups/PITR, HA, and enterprise SSO/SCIM. Review the admin/management endpoints before exposing a server to the public internet.
+Nubase is early-stage but all eight modules (Database, Auth, Storage, Assets, Functions, AI Gateway, Memory, cron) plus Studio and the MCP bridge are in place. Not yet implemented: **Realtime** and operational extras like backups/PITR, HA, and enterprise SSO/SCIM. Review the admin/management endpoints before exposing a server to the public internet.
 
 ## Contributing
 

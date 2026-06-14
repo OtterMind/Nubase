@@ -20,7 +20,7 @@ Write (gated by `NUBASE_ALLOW_ADMIN_WRITE=true`; otherwise they return `{ succes
 
 Prefer the read tools for inspection. Before any write tool, confirm the user asked for it; bucket and user deletion are destructive and need explicit confirmation.
 
-> Nubase has no serverless/edge-function runtime, so there are no function-deploy tools.
+> Storage is for **user-uploaded files** (private, signed-URL access). To publish a generated **frontend** (public static HTML/CSS/JS/images), use Assets instead — see `assets.md`. To deploy backend logic, see `functions.md`.
 
 ## Auth
 

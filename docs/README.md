@@ -1,31 +1,34 @@
 # Nubase Documentation
 
-Nubase is an open-source backend service born for AI-native applications and AI Coding workflows. It gives generated apps and agent-built products a real backend target instead of a pile of one-off scripts.
+Nubase turns AI-written code into real apps: the backend **and deploy layer** that a coding agent drives directly to ship a generated app online. It gives generated apps and agent-built products a real target instead of a pile of one-off scripts.
 
-It combines four primitives in one self-hostable platform:
+It combines eight capability modules in one self-hostable platform:
 
-- Memory
-- Database
-- Storage
-- Auth
+- Database — Postgres + PostgREST (`/rest/v1`) with RLS
+- Auth — Supabase-style users, sessions, OAuth/MFA (`/auth/v1`)
+- Storage — buckets + signed URLs for user files (`/storage/v1`)
+- Assets — publish the generated frontend to a public CDN (`/assets/v1`)
+- Functions — deploy backend logic as edge functions (`/functions/v1`)
+- AI Gateway — OpenAI/Anthropic-compatible LLM routing + usage (`/v1`)
+- Memory — durable agent/user/project context (`/mem/v1`)
+- cron — schedule recurring jobs
 
-The project is Supabase-inspired, but it is built around two core differences:
+The project is Supabase-inspired, but it is built around three core differences:
 
+- a complete generate → live deploy surface (frontend + backend + cron) in one platform
 - first-class AI memory as a platform primitive
-- AI Coding and agent workflows through stable REST APIs, Studio, and MCP-friendly database tools
 - self-hosted multi-project support through database-per-project isolation
 
 ## Start Here
 
 - [Product overview](product-overview.md)
-- [Supabase comparison](supabase-comparison.md)
+- [Deploy an AI-generated app (generate → live)](deploy-ai-generated-apps.md)
 - [Getting started](getting-started.md)
-- [Architecture](architecture.md)
-- [Edge Functions](edge-functions.md)
-- [Scheduled Jobs (Cron)](scheduled-jobs.md)
-- [Assets (static asset CDN)](assets.md)
-- [MCP and agent guide](mcp.md)
 - [Connect agents](agent-connect.md)
+- [MCP and agent guide](mcp.md)
+- [Supabase comparison](supabase-comparison.md)
+- [Architecture](architecture.md)
+- Capability deep-dives: [Edge Functions](edge-functions.md) · [Assets (static CDN)](assets.md) · [Scheduled Jobs (cron)](scheduled-jobs.md)
 - [Documentation plan](documentation-plan.md)
 
 ## Current Scope
@@ -34,14 +37,16 @@ Implemented or partially implemented:
 
 - Platform users and Studio login
 - Project creation and provisioning
-- Per-project Postgres routing
+- Per-project Postgres routing (Database) + PostgREST-compatible REST API
 - Supabase-style Auth
-- PostgREST-compatible REST API
 - S3/R2-compatible Storage
+- Assets static CDN (`/assets/v1`) for publishing generated frontends
+- Edge Functions gateway + executor provider (local / Cloudflare WfP)
+- AI Gateway (OpenAI/Anthropic-compatible) with usage tracking
 - AI Memory API
-- Edge Functions initial gateway and executor provider
+- Scheduled Jobs (cron) for edge-function and db-function targets
 - SQL editor and SQL history
-- Database and Memory MCP tools
+- MCP tools across Database, Auth, Storage, Assets, Functions, AI Gateway, Memory, and cron
 
 Not implemented yet:
 

@@ -366,6 +366,48 @@ export class NubaseClient {
     return this.request(`/cron/admin/v1/runs${query}`);
   }
 
+  // --- Assets control plane (/assets/admin/v1) ----------------------------
+  // Where a generated frontend gets published: static files served publicly at
+  // /assets/v1/{path}. The admin plane needs the project's service_role key.
+
+  assetsList(args: Record<string, unknown> = {}) {
+    const query = buildQuery({
+      prefix: args.prefix,
+      search: args.search,
+      limit: args.limit,
+      offset: args.offset,
+    });
+    return this.request(`/assets/admin/v1/files${query}`);
+  }
+
+  // Publish one asset. The body arrives as UTF-8 text (content) or base64
+  // (contentBase64) and is sent as raw bytes — the admin route reads the raw
+  // request body, not a JSON envelope. Returns the AssetFileDTO with publicUrl.
+  assetsUpload(args: Record<string, unknown>) {
+    const path = requiredString(args.path, 'path');
+    // PUT upserts (default); POST creates and 409s when the path exists.
+    const method = args.upsert === false ? 'POST' : 'PUT';
+    const query = buildQuery({ cacheControl: args.cacheControl });
+    return this.guardedWrite('publish asset', async () => {
+      const bytes = assetUploadBytes(args);
+      const contentType =
+        typeof args.contentType === 'string' && args.contentType ? args.contentType : guessContentType(path);
+      const { data } = await this.rawRequest(`/assets/admin/v1/files/${encodeAssetPath(path)}${query}`, {
+        method,
+        body: bytes,
+        contentType,
+      });
+      return data;
+    });
+  }
+
+  assetsDelete(args: Record<string, unknown>) {
+    const path = requiredString(args.path, 'path');
+    return this.guardedWrite('delete asset', () =>
+      this.request(`/assets/admin/v1/files/${encodeAssetPath(path)}`, { method: 'DELETE' })
+    );
+  }
+
   // --- Project API keys ---------------------------------------------------
   // The two project keys an app needs: the anon/authenticated key for browser
   // and client code, and the service_role key for trusted server-side code.
@@ -519,7 +561,7 @@ values (${sqlLiteral(entry.risk)}, ${entry.statementCount}, ${sqlLiteral(entry.s
 
   private async rawRequest(
     path: string,
-    options: { method?: string; body?: string; contentType?: string; throwOnError?: boolean } = {}
+    options: { method?: string; body?: string | Uint8Array; contentType?: string; throwOnError?: boolean } = {}
   ) {
     if (!this.config.projectKey) {
       throw new Error('Missing NUBASE_PROJECT_KEY or NUBASE_API_KEY.');
@@ -590,6 +632,69 @@ function cronJobOptionalFields(args: Record<string, unknown>) {
     timeoutSeconds: typeof args.timeoutSeconds === 'number' ? args.timeoutSeconds : undefined,
     enabled: typeof args.enabled === 'boolean' ? args.enabled : undefined,
   };
+}
+
+// Encode each path segment but keep the slashes — the /files/** route nests
+// assets (e.g. css/app.css), so the separators must survive. Leading slashes
+// are stripped so "/index.html" and "index.html" resolve to the same asset.
+function encodeAssetPath(path: string) {
+  return path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+}
+
+// Resolve an asset body to raw bytes. Exactly one of content (UTF-8 text) or
+// contentBase64 (binary) must be present, so an agent can publish either a
+// generated HTML/CSS/JS file or an image/font without guessing an encoding.
+function assetUploadBytes(args: Record<string, unknown>): Uint8Array {
+  const hasContent = typeof args.content === 'string';
+  const hasBase64 = typeof args.contentBase64 === 'string';
+  if (hasContent === hasBase64) {
+    throw new Error('Provide exactly one of content (UTF-8 text) or contentBase64 (binary).');
+  }
+  if (hasContent) {
+    return new TextEncoder().encode(args.content as string);
+  }
+  // Buffer.from(..,'base64') silently drops invalid characters, so a malformed
+  // value (e.g. a "data:image/png;base64,..." prefix left on, or plain text)
+  // would upload corrupt bytes with no error. Validate the charset first.
+  const raw = (args.contentBase64 as string).replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(raw)) {
+    throw new Error(
+      'contentBase64 is not valid base64 — strip any "data:...;base64," prefix and non-base64 characters.'
+    );
+  }
+  return new Uint8Array(Buffer.from(raw, 'base64'));
+}
+
+// Best-effort Content-Type from the asset path so callers rarely need to pass
+// one explicitly. The backend honors whatever Content-Type we send.
+const ASSET_MIME: Record<string, string> = {
+  html: 'text/html; charset=utf-8',
+  htm: 'text/html; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  js: 'text/javascript; charset=utf-8',
+  mjs: 'text/javascript; charset=utf-8',
+  json: 'application/json; charset=utf-8',
+  map: 'application/json; charset=utf-8',
+  txt: 'text/plain; charset=utf-8',
+  xml: 'application/xml; charset=utf-8',
+  svg: 'image/svg+xml',
+  ico: 'image/x-icon',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+  ttf: 'font/ttf',
+  wasm: 'application/wasm',
+  pdf: 'application/pdf',
+};
+
+function guessContentType(path: string): string {
+  const ext = path.toLowerCase().split('.').pop() ?? '';
+  return ASSET_MIME[ext] ?? 'application/octet-stream';
 }
 
 // Postgres string literal with single quotes doubled — safe for arbitrary text.

@@ -192,6 +192,43 @@ export R2_GLOBAL_BUCKET="nubase-storage"
 
 Then use Studio or `/storage/v1/*` endpoints to create buckets and upload objects.
 
+## 10. Deploy an Edge Function
+
+Edge Functions are how backend logic goes live. With `nubase_cli` authorized for the project (see [agent-connect.md](agent-connect.md)):
+
+```bash
+nubase_cli functions new hello
+NUBASE_ALLOW_ADMIN_WRITE=true nubase_cli functions deploy hello
+nubase_cli functions invoke hello --method POST --body '{"name":"ada"}'
+```
+
+The function is live at `POST http://localhost:9999/functions/v1/hello`. See [edge-functions.md](edge-functions.md).
+
+## 11. Publish a Frontend to Assets
+
+Assets is where a generated frontend goes — a public static CDN. Upload a page with the project's service_role key:
+
+```bash
+curl -X PUT "http://localhost:9999/assets/admin/v1/files/index.html" \
+  -H "apikey: $NUBASE_SERVICE_KEY" \
+  -H "Content-Type: text/html" \
+  --data-binary '<!doctype html><h1>Hello from Nubase Assets</h1>'
+```
+
+The upload response is the asset record, including a resolved `publicUrl`. On the public read path (no apikey), the tenant is resolved from the request **subdomain** (`{appCode}.{domain}`) — so on plain `localhost` you confirm it by sending the matching `Host` header (replace `<appCode>` with your project ref):
+
+```bash
+curl -H "Host: <appCode>.localhost" http://localhost:9999/assets/v1/index.html
+```
+
+In production the page is just the `publicUrl` from the upload response, e.g. `https://<appCode>.<your-domain>/assets/v1/index.html`.
+
+Agents publish the same way over MCP with `assets_upload` (which returns the `publicUrl` directly). See [assets.md](assets.md).
+
+## Next: deploy a full app
+
+You now have data (Database), identity (Auth), files (Storage), backend logic (Functions), and a published frontend (Assets). To wire these into a deployed app end to end — including scheduled jobs (cron) and AI Gateway — follow [Deploy an AI-generated app](deploy-ai-generated-apps.md).
+
 ## Troubleshooting
 
 ### Backend fails because encryption key is missing

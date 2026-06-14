@@ -275,6 +275,95 @@ const TOOL_TABLE: Record<string, ToolEntry> = {
       secrets: requiredObject(args.secrets, 'secrets'),
     }),
   },
+  cron_list: {
+    description: 'List scheduled (cron) jobs for this project. Read-only.',
+    inputSchema: objectSchema({}),
+    handler: (_args, _config, client) => client.cronListJobs(),
+  },
+  cron_get: {
+    description: 'Get one scheduled job by name. Read-only.',
+    inputSchema: objectSchema({ name: { type: 'string' } }, ['name']),
+    handler: (args, _config, client) => client.cronGetJob(args),
+  },
+  cron_create: {
+    description:
+      'Create a scheduled (cron) job. targetType is edge_function (set functionSlug; optional httpMethod/requestPath/requestBody) or db_function (set dbFunctionName; optional dbFunctionArgs). Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+      cronExpression: { type: 'string' },
+      targetType: { type: 'string', enum: ['edge_function', 'db_function'] },
+      description: { type: 'string' },
+      functionSlug: { type: 'string' },
+      httpMethod: { type: 'string' },
+      requestPath: { type: 'string' },
+      requestBody: { type: 'string' },
+      dbFunctionName: { type: 'string' },
+      dbFunctionArgs: { type: 'object' },
+      timeoutSeconds: { type: 'number' },
+      enabled: { type: 'boolean' },
+    }, ['name', 'cronExpression', 'targetType']),
+    handler: (args, _config, client) => client.cronCreateJob(args),
+  },
+  cron_update: {
+    description:
+      'Update a scheduled job by name (cronExpression, enabled, target fields). targetType is immutable. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+      cronExpression: { type: 'string' },
+      description: { type: 'string' },
+      functionSlug: { type: 'string' },
+      httpMethod: { type: 'string' },
+      requestPath: { type: 'string' },
+      requestBody: { type: 'string' },
+      dbFunctionName: { type: 'string' },
+      dbFunctionArgs: { type: 'object' },
+      timeoutSeconds: { type: 'number' },
+      enabled: { type: 'boolean' },
+    }, ['name']),
+    handler: (args, _config, client) => client.cronUpdateJob(args),
+  },
+  cron_delete: {
+    description: 'Delete a scheduled job by name. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({ name: { type: 'string' } }, ['name']),
+    handler: (args, _config, client) => client.cronDeleteJob(args),
+  },
+  cron_runs: {
+    description: 'List scheduled-job run history. Pass name for one job, omit it for the whole project. Read-only.',
+    inputSchema: objectSchema({
+      name: { type: 'string' },
+      limit: { type: 'number' },
+    }),
+    handler: (args, _config, client) =>
+      typeof args.name === 'string' && args.name ? client.cronJobRuns(args) : client.cronRuns(args),
+  },
+  assets_list: {
+    description: 'List published static assets (with their public URLs) for this project. Read-only.',
+    inputSchema: objectSchema({
+      prefix: { type: 'string' },
+      search: { type: 'string' },
+      limit: { type: 'number' },
+      offset: { type: 'number' },
+    }),
+    handler: (args, _config, client) => client.assetsList(args),
+  },
+  assets_upload: {
+    description:
+      "Publish a static asset to the project's public CDN (/assets/v1/<path>) — this is where a generated frontend goes. Pass content for UTF-8 text (html/css/js/svg/json) or contentBase64 for binaries (images/fonts). Content-Type is inferred from the path when omitted. upsert defaults to true. Returns the public URL. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.",
+    inputSchema: objectSchema({
+      path: { type: 'string' },
+      content: { type: 'string' },
+      contentBase64: { type: 'string' },
+      contentType: { type: 'string' },
+      cacheControl: { type: 'string' },
+      upsert: { type: 'boolean' },
+    }, ['path']),
+    handler: (args, _config, client) => client.assetsUpload(args),
+  },
+  assets_delete: {
+    description: 'Delete a published static asset by path. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true.',
+    inputSchema: objectSchema({ path: { type: 'string' } }, ['path']),
+    handler: (args, _config, client) => client.assetsDelete(args),
+  },
 };
 
 export const TOOLS: ToolDefinition[] = Object.entries(TOOL_TABLE).map(([name, entry]) => ({

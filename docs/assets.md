@@ -67,11 +67,11 @@ Asset paths are restricted to URL-safe segments (`[A-Za-z0-9._-]`, separated by 
 
 Agents connected over MCP can publish assets directly:
 
-- `assetsUpload(path, content | contentBase64, contentType, cacheControl, upsert)`
-- `assetsList(prefix, search, limit)`
-- `assetsDelete(path)`
+- `assets_upload(path, content | contentBase64, contentType, cacheControl, upsert)`
+- `assets_list(prefix, search, limit, offset)`
+- `assets_delete(path)`
 
-Mutating tools require the service_role apikey on the MCP connection. See [mcp.md](mcp.md).
+`assets_upload` / `assets_delete` are gated by `NUBASE_ALLOW_ADMIN_WRITE=true` and require the service_role apikey on the MCP connection. There is also a `nubase_cli assets` CLI. See [mcp.md](mcp.md).
 
 ## Configuration
 
