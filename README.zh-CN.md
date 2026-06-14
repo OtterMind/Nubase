@@ -1,3 +1,6 @@
+
+![AI demo to real app with Nubase](brand/ai-demo-to-real-app-en.png)
+
 # Nubase
 
 [English](README.md) · **简体中文**
