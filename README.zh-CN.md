@@ -49,13 +49,13 @@ npx -y nubase_cli@latest install-skills
 
 ```bash
 docker run -d --name nubase \
-  -p 3000:3000 -p 9999:9999 -p 5432:5432 \
+  -p 9999:9999 -p 5432:5432 \
   -v nubase_data:/data \
   <your-namespace>/nubase:latest
 ```
 
-- **Studio** → http://localhost:3000 —— 创建账号、创建项目，点击 **Provision** 初始化项目数据库。
-- **API** → http://localhost:9999
+- **Studio** → http://localhost:9999/studio —— 创建账号、创建项目，点击 **Provision** 初始化项目数据库。
+- **API** → http://localhost:9999（Studio 界面已打包进后端，同端口提供）
 
 > 首次启动的密钥会生成到 `/data` 卷中；保留该卷即可保留你的项目。如需带稳定密钥的正式部署，见 [使用 Docker 自托管](#-使用-docker-自托管)。
 
@@ -76,14 +76,14 @@ docker run -d --name nubase \
 **试用（自动生成密钥，保存在卷中）：**
 
 ```bash
-docker run -d --name nubase -p 3000:3000 -p 9999:9999 -p 5432:5432 \
+docker run -d --name nubase -p 9999:9999 -p 5432:5432 \
   -v nubase_data:/data <your-namespace>/nubase:latest
 ```
 
 **生产（固定稳定密钥，让加密的项目凭据在重启后依然可用）：**
 
 ```bash
-docker run -d --name nubase -p 3000:3000 -p 9999:9999 -p 5432:5432 \
+docker run -d --name nubase -p 9999:9999 -p 5432:5432 \
   -v nubase_data:/data \
   -e PGRST_ENCRYPTION_MASTER_KEY="$(openssl rand -base64 32)" \
   -e METADATA_SERVICE_ROLE_KEY="$(openssl rand -base64 48)" \

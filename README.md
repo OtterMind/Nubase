@@ -49,13 +49,13 @@ The all-in-one Docker image bundles **PostgreSQL + Redis + the backend + Studio*
 
 ```bash
 docker run -d --name nubase \
-  -p 3000:3000 -p 9999:9999 -p 5432:5432 \
+  -p 9999:9999 -p 5432:5432 \
   -v nubase_data:/data \
   <your-namespace>/nubase:latest
 ```
 
-- **Studio** → http://localhost:3000 — create an account, create a project, click **Provision** to initialize its database.
-- **API** → http://localhost:9999
+- **Studio** → http://localhost:9999/studio — create an account, create a project, click **Provision** to initialize its database.
+- **API** → http://localhost:9999 (the Studio UI is bundled into the backend and served on the same port)
 
 > First-boot secrets are generated into the `/data` volume; keep the volume to retain your projects. For a real deployment with stable secrets, see [Self-host with Docker](#-self-host-with-docker).
 
@@ -76,14 +76,14 @@ The single all-in-one image is everything you need to run Nubase on your own box
 **Try it (auto-generated secrets, kept in the volume):**
 
 ```bash
-docker run -d --name nubase -p 3000:3000 -p 9999:9999 -p 5432:5432 \
+docker run -d --name nubase -p 9999:9999 -p 5432:5432 \
   -v nubase_data:/data <your-namespace>/nubase:latest
 ```
 
 **Production (pin stable secrets so encrypted project credentials survive restarts):**
 
 ```bash
-docker run -d --name nubase -p 3000:3000 -p 9999:9999 -p 5432:5432 \
+docker run -d --name nubase -p 9999:9999 -p 5432:5432 \
   -v nubase_data:/data \
   -e PGRST_ENCRYPTION_MASTER_KEY="$(openssl rand -base64 32)" \
   -e METADATA_SERVICE_ROLE_KEY="$(openssl rand -base64 48)" \

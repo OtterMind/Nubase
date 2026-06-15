@@ -106,23 +106,14 @@ start_backend() {
   export REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
   export SERVER_PORT="${SERVER_PORT:-9999}"
 
-  log "Starting backend on port ${SERVER_PORT}"
+  # The jar serves both the API and the bundled Studio UI (/studio) on this one port.
+  log "Starting backend (API + Studio UI) on port ${SERVER_PORT}"
   java ${JAVA_OPTS:-} -jar /opt/nubase/backend/app.jar &
   BACKEND_PID=$!
 }
 
-start_studio() {
-  export PORT="${PORT:-3000}"
-  export HOSTNAME="${HOSTNAME:-0.0.0.0}"
-
-  log "Starting Studio on port ${PORT}"
-  node /opt/nubase/studio/apps/studio/server.js &
-  STUDIO_PID=$!
-}
-
 shutdown() {
   log "Stopping services"
-  [ -n "${STUDIO_PID:-}" ] && kill "$STUDIO_PID" 2>/dev/null || true
   [ -n "${BACKEND_PID:-}" ] && kill "$BACKEND_PID" 2>/dev/null || true
   redis-cli -h 127.0.0.1 -p "${REDIS_PORT:-6379}" shutdown 2>/dev/null || true
   su postgres -c "/usr/lib/postgresql/15/bin/pg_ctl -D '$PGDATA' -m fast -w stop" 2>/dev/null || true
@@ -134,6 +125,5 @@ ensure_secrets
 init_postgres
 start_redis
 start_backend
-start_studio
 
-wait -n "$BACKEND_PID" "$STUDIO_PID"
+wait "$BACKEND_PID"

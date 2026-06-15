@@ -4,32 +4,15 @@ FROM maven:3.9-eclipse-temurin-17 AS backend-builder
 
 WORKDIR /workspace
 COPY pom.xml .
-RUN --mount=type=cache,target=/root/.m2 mvn -B dependency:go-offline
 COPY src ./src
-RUN --mount=type=cache,target=/root/.m2 mvn -B clean package -Dmaven.test.skip=true
-
-FROM node:20-bookworm-slim AS studio-builder
-
-WORKDIR /workspace/frontend
-RUN corepack enable
-
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
-COPY frontend/tsconfig.base.json ./
-COPY frontend/packages ./packages
-COPY frontend/apps/studio ./apps/studio
-
-# Leave empty so the Studio bundle uses RELATIVE API paths; the Next standalone server
-# proxies them to the backend inside the container (see apps/studio/next.config.mjs). The
-# image then works at any server IP/domain with no rebuild. Only set this to an ABSOLUTE URL
-# if you serve Studio and the API on separate origins without the built-in proxy.
-ARG NEXT_PUBLIC_NUBASE_API_URL=
-ENV NEXT_PUBLIC_NUBASE_API_URL=${NEXT_PUBLIC_NUBASE_API_URL}
-
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm config set store-dir /pnpm/store && \
-    mkdir -p apps/studio/public && \
-    pnpm install --no-frozen-lockfile && \
-    pnpm --filter @nubase/studio build
+# Bundle the Studio UI into the jar (served same-origin at /studio) via the `with-frontend`
+# profile: frontend-maven-plugin self-installs Node+pnpm and static-exports Studio into the
+# jar's resources. A single `java -jar` then serves both the API (/auth/v1, /rest/v1, …) and
+# the UI (/studio) on one port — so the deployment works at any server IP/domain with no
+# cross-origin "localhost" problem and no separate frontend process.
+COPY frontend ./frontend
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -Pwith-frontend clean package -Dmaven.test.skip=true
 
 FROM pgvector/pgvector:pg15
 
@@ -43,17 +26,12 @@ RUN apt-get -o Acquire::Retries=5 update && \
       openjdk-17-jre-headless \
       openssl \
       redis-server && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get -o Acquire::Retries=5 install -y --no-install-recommends nodejs && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/nubase
 
 COPY --from=backend-builder /workspace/target/*.jar /opt/nubase/backend/app.jar
-COPY --from=studio-builder /workspace/frontend/apps/studio/.next/standalone /opt/nubase/studio
-COPY --from=studio-builder /workspace/frontend/apps/studio/.next/static /opt/nubase/studio/apps/studio/.next/static
-COPY --from=studio-builder /workspace/frontend/apps/studio/public /opt/nubase/studio/apps/studio/public
 COPY docker/all-in-one/entrypoint.sh /usr/local/bin/nubase-entrypoint
 
 RUN chmod +x /usr/local/bin/nubase-entrypoint && \
@@ -69,14 +47,13 @@ ENV PGDATA=/data/postgres \
     REDIS_HOST=127.0.0.1 \
     REDIS_PORT=6379 \
     NUBASE_CACHE_TYPE=caffeine \
-    SERVER_PORT=9999 \
-    PORT=3000 \
-    HOSTNAME=0.0.0.0
+    SERVER_PORT=9999
 
 VOLUME ["/data"]
-EXPOSE 3000 9999 5432
+# Single app port: 9999 serves both the API and the Studio UI (/studio). 5432 = Postgres.
+EXPOSE 9999 5432
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=5 \
-  CMD nc -z 127.0.0.1 9999 && curl -fsS http://127.0.0.1:3000 >/dev/null || exit 1
+  CMD nc -z 127.0.0.1 9999 && curl -fsS -o /dev/null http://127.0.0.1:9999/studio/ || exit 1
 
 ENTRYPOINT ["dumb-init", "--", "nubase-entrypoint"]
