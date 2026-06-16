@@ -251,7 +251,7 @@ public class AdminController {
      * "dbConnectionUser": "postgres"  // optional
      * }
      */
-    @RequireServiceRole
+    // Gated by AdminInitAuthFilter (platform JWT or metadata service-role key) — see initDatabase.
     @PostMapping("/admin/init/schema")
     public ResponseEntity<InitSchemaResponse> initSchema(@Valid @RequestBody InitSchemaRequest request) {
         log.warn("Schema initialization requested for schema: {}", request.getSchema());
@@ -275,7 +275,8 @@ public class AdminController {
      *
      * <p>Returns a per-tenant status map: {@code {dbKey: "OK" | "ERROR: …" | "SKIPPED: …"}}.
      */
-    @RequireServiceRole
+    // Gated by AdminInitAuthFilter (platform JWT or metadata service-role key) — see initDatabase.
+    // Called by Studio's Memory settings with a project dbKey; the all-tenants migration is idempotent.
     @PostMapping("/admin/init/mem-schema")
     public ResponseEntity<Map<String, Object>> initMemSchema(
             @RequestParam(required = false) String dbKey) {
@@ -316,7 +317,7 @@ public class AdminController {
      *
      * <p>Returns a per-tenant status map: {@code {dbKey: "OK" | "ERROR: …" | "SKIPPED: …"}}.
      */
-    @RequireServiceRole
+    // Gated by AdminInitAuthFilter (platform JWT or metadata service-role key) — see initDatabase.
     @PostMapping("/admin/init/assets-schema")
     public ResponseEntity<Map<String, Object>> initAssetsSchema(
             @RequestParam(required = false) String dbKey) {
@@ -391,7 +392,11 @@ public class AdminController {
      * - PostgreSQL host and port are configured in application.yml (pgrst.multidb.postgres.host/port)
      * - No need to provide admin credentials or connection details
      */
-    @RequireServiceRole
+    // Auth is enforced by AdminInitAuthFilter, which requires a platform super-admin/user JWT
+    // (it stashes platformUserId, used below for ownership) or the metadata service-role key for
+    // /auth/v1/admin/init/**. The tenant-scoped @RequireServiceRole guard does NOT fit here: these
+    // are cross-tenant calls made by a Studio platform user, which carry no tenant service-role
+    // context — adding it here wrongly rejected the legitimate project-creation flow.
     @PostMapping("/admin/init/database")
     public ResponseEntity<InitDatabaseResponse> initDatabase(@Valid @RequestBody InitDatabaseRequest request,
                                                              HttpServletRequest httpRequest) {
@@ -412,7 +417,7 @@ public class AdminController {
      * @param request
      * @return
      */
-    @RequireServiceRole
+    // Gated by AdminInitAuthFilter (platform JWT or metadata service-role key) — see initDatabase above.
     @PostMapping("/admin/init/database_config")
     public ResponseEntity<InitDatabaseResponse> initDatabaseConfig(@Valid @RequestBody InitDatabaseRequest request,
                                                                    HttpServletRequest httpRequest) {
