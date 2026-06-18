@@ -7,6 +7,7 @@ import ai.nubase.auth.repository.UserRepository;
 import ai.nubase.auth.service.JwtSecretService;
 import ai.nubase.auth.service.OAuthStateService;
 import ai.nubase.common.context.MultiTenancyContext;
+import ai.nubase.common.util.SensitiveHeaderLogMask;
 import ai.nubase.common.enums.DatabaseInitStatus;
 import ai.nubase.common.enums.Role;
 import ai.nubase.postgrest.multidb.DatabaseConfig;
@@ -492,18 +493,9 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
         byte[] content = request.getContentAsByteArray();
         String body = content.length > 0 ? new String(content, StandardCharsets.UTF_8) : null;
 
-        MCP_LOG.info("MCP Request: method={}, uri={}, headers={}, body={}", request.getMethod(), request.getRequestURI(), getHeaders(request), body);
+        MCP_LOG.info("MCP Request: method={}, uri={}, headers={}, body={}",
+                request.getMethod(), request.getRequestURI(), SensitiveHeaderLogMask.collectMasked(request), body);
 
-    }
-
-    private Map<String, String> getHeaders(HttpServletRequest request) {
-        Map<String, String> headers = new HashMap<>();
-        Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String name = headerNames.nextElement();
-            headers.put(name, request.getHeader(name));
-        }
-        return headers;
     }
 
     private void logResponse(ContentCachingResponseWrapper response, long duration) {
