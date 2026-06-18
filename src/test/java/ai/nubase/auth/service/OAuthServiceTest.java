@@ -32,6 +32,7 @@ class OAuthServiceTest {
     private UserRepository userRepository;
     private IdentityRepository identityRepository;
     private AuthResponseFactory authResponseFactory;
+    private EffectiveAuthConfig effectiveAuthConfig;
     private OAuthProvider provider;
     private OAuthService svc;
 
@@ -43,6 +44,7 @@ class OAuthServiceTest {
         userRepository = mock(UserRepository.class);
         identityRepository = mock(IdentityRepository.class);
         authResponseFactory = mock(AuthResponseFactory.class);
+        effectiveAuthConfig = mock(EffectiveAuthConfig.class);
         provider = mock(OAuthProvider.class);
         when(provider.getProviderName()).thenReturn("google");
         when(provider.getUserInfo("code", "uri")).thenReturn(OAuthUserInfo.builder()
@@ -52,7 +54,7 @@ class OAuthServiceTest {
                 Map.of("google", provider), userRepository, identityRepository,
                 mock(ai.nubase.auth.repository.SessionRepository.class), mock(JwtSecretService.class),
                 mock(TokenService.class), new ai.nubase.auth.util.UserMapper(), new AuthConfig(),
-                authResponseFactory);
+                effectiveAuthConfig, authResponseFactory);
 
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(identityRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

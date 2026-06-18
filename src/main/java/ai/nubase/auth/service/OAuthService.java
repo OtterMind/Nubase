@@ -47,6 +47,7 @@ public class OAuthService {
     private final TokenService tokenService;
     private final UserMapper userMapper;
     private final AuthConfig authConfig;
+    private final EffectiveAuthConfig effectiveAuthConfig;
     private final AuthResponseFactory authResponseFactory;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -192,8 +193,17 @@ public class OAuthService {
         }
 
         if (existingUser.isPresent()) {
-            log.debug("Found existing user with email: {}", oauthUserInfo.getEmail());
+            // 与新建用户路径一致：仅 IdP 已验证邮箱才允许按 email 自动合并，避免未验证邮箱绑到他人账号。
+            // 租户开启邮箱确认时，还要求目标账号已完成确认，防止 OAuth 绕过密码注册的确认流程。
+            if (!oauthUserInfo.isEmailVerified()) {
+                throw new RuntimeException(
+                        "OAuth email is not verified by the provider; cannot link to an existing account");
+            }
             User user = existingUser.get();
+            if (effectiveAuthConfig.emailConfirmationRequired() && user.getEmailConfirmedAt() == null) {
+                throw new RuntimeException("Existing account email is not confirmed");
+            }
+            log.debug("Linking OAuth identity to confirmed user by verified email: {}", oauthUserInfo.getEmail());
             mergeProviderMetadata(user, oauthUserInfo.getProvider());
             return userRepository.save(user);
         }

@@ -109,7 +109,7 @@ public class GitHubOAuthProvider implements OAuthProvider {
 
         JsonNode userInfo = objectMapper.readTree(userResponse.getBody());
 
-        // Get user emails (GitHub may not include email in basic info)
+        // 与 PlatformOAuthService 一致：只采用 GitHub /user/emails 中 verified 的地址，不信任公开 profile email。
         String email = null;
         boolean emailVerified = false;
         try {
@@ -122,26 +122,28 @@ public class GitHubOAuthProvider implements OAuthProvider {
 
             JsonNode emails = objectMapper.readTree(emailResponse.getBody());
             if (emails.isArray()) {
+                String firstVerified = null;
                 for (JsonNode emailNode : emails) {
+                    if (!emailNode.has("verified") || !emailNode.get("verified").asBoolean()) {
+                        continue;
+                    }
+                    String candidate = emailNode.get("email").asText();
                     if (emailNode.has("primary") && emailNode.get("primary").asBoolean()) {
-                        email = emailNode.get("email").asText();
-                        emailVerified = emailNode.has("verified") && emailNode.get("verified").asBoolean();
+                        email = candidate;
+                        emailVerified = true;
                         break;
                     }
+                    if (firstVerified == null) {
+                        firstVerified = candidate;
+                    }
                 }
-                // If no primary email, use the first one
-                if (email == null && emails.size() > 0) {
-                    email = emails.get(0).get("email").asText();
-                    emailVerified = emails.get(0).has("verified") && emails.get(0).get("verified").asBoolean();
+                if (email == null && firstVerified != null) {
+                    email = firstVerified;
+                    emailVerified = true;
                 }
             }
         } catch (Exception e) {
             log.warn("Failed to fetch GitHub user emails: {}", e.getMessage());
-        }
-
-        // If still no email, try to get from basic user info
-        if (email == null && userInfo.has("email") && !userInfo.get("email").isNull()) {
-            email = userInfo.get("email").asText();
         }
 
         return OAuthUserInfo.builder()
