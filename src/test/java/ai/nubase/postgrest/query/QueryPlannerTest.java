@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import ai.nubase.postgrest.multidb.DatabaseConfig;
 import ai.nubase.postgrest.multidb.SchemaCacheManager;
 import ai.nubase.postgrest.schema.ForeignKey;
 import ai.nubase.postgrest.schema.SchemaCache;
@@ -211,6 +212,55 @@ class QueryPlannerTest {
         // Verify
         assertEquals(0L, plan.getOffset());
         assertEquals(10L, plan.getLimit());
+    }
+
+    @Test
+    void selectWithoutRange_appliesDbMaxRowsFromTenantConfig() {
+        MultiTenancyContext.setContext(MultiTenancyContext.ContextData.builder()
+                .appCode("test_app")
+                .databaseKey("test_db")
+                .schemaName("public")
+                .databaseConfig(DatabaseConfig.builder().dbMaxRows(1000).build())
+                .build());
+
+        ApiRequest request = ApiRequest.builder()
+                .schema("public")
+                .table("users")
+                .method("GET")
+                .build();
+
+        when(schemaCache.getTable(anyString(), anyString())).thenReturn(
+                Table.builder().columns(new ArrayList<>()).build());
+
+        QueryPlan plan = queryPlanner.plan(request);
+
+        assertEquals(0L, plan.getOffset());
+        assertEquals(1000L, plan.getLimit());
+    }
+
+    @Test
+    void selectWithOversizedRange_capsLimitToDbMaxRows() {
+        MultiTenancyContext.setContext(MultiTenancyContext.ContextData.builder()
+                .appCode("test_app")
+                .databaseKey("test_db")
+                .schemaName("public")
+                .databaseConfig(DatabaseConfig.builder().dbMaxRows(100).build())
+                .build());
+
+        ApiRequest request = ApiRequest.builder()
+                .schema("public")
+                .table("users")
+                .method("GET")
+                .range(RangeHeader.builder().unit("items").start(0L).end(999L).build())
+                .build();
+
+        when(schemaCache.getTable(anyString(), anyString())).thenReturn(
+                Table.builder().columns(new ArrayList<>()).build());
+
+        QueryPlan plan = queryPlanner.plan(request);
+
+        assertEquals(0L, plan.getOffset());
+        assertEquals(100L, plan.getLimit());
     }
 
     @Test
