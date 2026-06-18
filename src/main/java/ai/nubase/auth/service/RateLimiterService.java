@@ -5,11 +5,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,6 +27,20 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 @Slf4j
 public class RateLimiterService {
+
+    /**
+     * INCR 与首次 EXPIRE 必须在同一 Lua 脚本里完成：分两次调用时，若在 EXPIRE 前进程崩溃，
+     * 会留下无 TTL 的计数 key，窗口永不重置（永久 429）或失败计数永不衰减。
+     * 与 {@link ai.nubase.functions.service.EdgeFunctionRateLimiter} 使用相同模式。
+     */
+    private static final RedisScript<Long> INCREMENT_WITH_EXPIRE_SCRIPT = RedisScript.of(
+            """
+            local count = redis.call('INCR', KEYS[1])
+            if count == 1 then
+              redis.call('PEXPIRE', KEYS[1], ARGV[1])
+            end
+            return count
+            """, Long.class);
 
     private final EffectiveAuthConfig effectiveAuthConfig;
 
@@ -129,11 +145,9 @@ public class RateLimiterService {
     // ---------------------------------------------------------------- Redis backend
 
     private void checkRateRedis(AuthConfig.RateLimitSettings cfg, String action, String identifier) {
-        String key = "rl:" + key(action, identifier);
-        Long n = redisTemplate.opsForValue().increment(key);
-        if (n != null && n == 1L) {
-            redisTemplate.expire(key, Duration.ofSeconds(cfg.getWindowSeconds()));
-        }
+        String redisKey = "rl:" + key(action, identifier);
+        long ttlMillis = cfg.getWindowSeconds() * 1000L;
+        Long n = redisIncrementWithExpire(redisKey, ttlMillis);
         if (n != null && n > cfg.getMaxRequests()) {
             throw new RateLimitExceededException(
                     "Rate limit exceeded for " + action + ". Please try again later.");
@@ -142,15 +156,20 @@ public class RateLimiterService {
 
     private void recordFailureRedis(AuthConfig.RateLimitSettings cfg, String identifier) {
         String countKey = "rl:fail:" + tenant() + ":" + identifier;
-        Long n = redisTemplate.opsForValue().increment(countKey);
-        if (n != null && n == 1L) {
-            redisTemplate.expire(countKey, Duration.ofSeconds(cfg.getLockoutSeconds()));
-        }
+        long ttlMillis = cfg.getLockoutSeconds() * 1000L;
+        Long n = redisIncrementWithExpire(countKey, ttlMillis);
         if (n != null && n >= cfg.getMaxFailedLogins()) {
             redisTemplate.opsForValue().set("rl:lock:" + tenant() + ":" + identifier, "1",
                     Duration.ofSeconds(cfg.getLockoutSeconds()));
             log.warn("Identity '{}' locked out after {} failed attempts (redis)", identifier, n);
         }
+    }
+
+    private Long redisIncrementWithExpire(String redisKey, long ttlMillis) {
+        return redisTemplate.execute(
+                INCREMENT_WITH_EXPIRE_SCRIPT,
+                List.of(redisKey),
+                String.valueOf(ttlMillis));
     }
 
     private String key(String action, String identifier) {
