@@ -3,6 +3,7 @@ package ai.nubase.ai.gateway.service;
 import ai.nubase.ai.gateway.dto.ApiUsageRecord;
 import ai.nubase.ai.gateway.dto.TokenUsage;
 import ai.nubase.common.config.AnthropicConfig;
+import ai.nubase.common.util.ApiKeyLogMask;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
@@ -148,7 +149,7 @@ public class ClaudeGatewayService {
         long startTime = System.currentTimeMillis();
         String requestId = UUID.randomUUID().toString();
 
-        log.info("📤 [{}] GET {} - API Key: {}", requestId, path, (clientApiKey));
+        log.info("📤 [{}] GET {} - API Key: {}", requestId, path, ApiKeyLogMask.mask(clientApiKey));
 
         Request.Builder requestBuilder = new Request.Builder()
                 .url(url)
@@ -199,7 +200,7 @@ public class ClaudeGatewayService {
                         trackApiUsage(clientApiKey, requestId, null, path, "GET",
                                 response.code(), responseBody, duration, headers, null);
 
-                        requestLogService.logRequest(requestId, (clientApiKey), "GET", path,
+                        requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "GET", path,
                                 null, headers, null, response.code(), responseBody, duration,
                                 TokenUsage.empty(), null);
 
@@ -211,7 +212,7 @@ public class ClaudeGatewayService {
                 trackApiUsage(clientApiKey, requestId, null, path, "GET",
                         response.code(), responseBody, duration, headers, null);
 
-                requestLogService.logRequest(requestId, (clientApiKey), "GET", path,
+                requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "GET", path,
                         null, headers, null, response.code(), responseBody, duration,
                         TokenUsage.empty(), null);
 
@@ -237,7 +238,7 @@ public class ClaudeGatewayService {
                     trackApiUsage(clientApiKey, requestId, null, path, "GET",
                             500, null, duration, headers, e.getMessage());
 
-                    requestLogService.logRequest(requestId, (clientApiKey), "GET", path,
+                    requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "GET", path,
                             null, headers, null, 500, null, duration,
                             TokenUsage.empty(), e.getMessage());
 
@@ -357,7 +358,7 @@ public class ClaudeGatewayService {
         String requestId = UUID.randomUUID().toString();
 
         log.info("agent_log [{}] POST {} - 模型: {}, API Key: {}, 上游: {}",
-                requestId, path, model, (clientApiKey), upstream.name);
+                requestId, path, model, ApiKeyLogMask.mask(clientApiKey), upstream.name);
         log.info("上游配置: baseUrl={}, timeout={}ms, maxInputTokens={}",
                 upstream.baseUrl, upstream.timeout, upstream.maxInputTokens);
         String requestBodyLog = requestBody.length() > 200 ? requestBody.substring(0, 200) + "..." : requestBody;
@@ -429,7 +430,7 @@ public class ClaudeGatewayService {
                         trackApiUsage(clientApiKey, requestId, model, path, "POST",
                                 response.code(), responseBody, duration, headers, null);
 
-                        requestLogService.logRequest(requestId, (clientApiKey), "POST", path,
+                        requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "POST", path,
                                 model, headers, requestBody, response.code(), responseBody, duration,
                                 tokenUsage, null);
 
@@ -441,7 +442,7 @@ public class ClaudeGatewayService {
                 trackApiUsage(clientApiKey, requestId, model, path, "POST",
                         response.code(), responseBody, duration, headers, null);
 
-                requestLogService.logRequest(requestId, (clientApiKey), "POST", path,
+                requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "POST", path,
                         model, headers, requestBody, response.code(), responseBody, duration,
                         tokenUsage, null);
 
@@ -467,7 +468,7 @@ public class ClaudeGatewayService {
                     trackApiUsage(clientApiKey, requestId, model, path, "POST",
                             500, null, duration, headers, e.getMessage());
 
-                    requestLogService.logRequest(requestId, (clientApiKey), "POST", path,
+                    requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "POST", path,
                             model, headers, requestBody, 500, null, duration,
                             TokenUsage.empty(), e.getMessage());
 
@@ -500,7 +501,7 @@ public class ClaudeGatewayService {
         log.info("🔢 转发 Count Tokens 请求到 Claude API");
         log.info("请求ID: {}", requestId);
         log.info("URL: {}", url);
-        log.info("客户端 API Key: {}", (clientApiKey));
+        log.info("客户端 API Key: {}", ApiKeyLogMask.mask(clientApiKey));
         if (headers != null && !headers.isEmpty()) {
             log.info("请求头: {}", headers);
         }
@@ -652,7 +653,7 @@ public class ClaudeGatewayService {
                     response.code(), null, duration, headers,
                     response.isSuccessful() ? null : responseBody);
 
-            requestLogService.logRequest(requestId, clientApiKey, "POST", path,
+            requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "POST", path,
                     null, headers,
                     "{\"_multipart\":true,\"filename\":\"" + filename.replace("\"", "\\\"")
                             + "\",\"size\":" + file.getSize() + "}",
@@ -712,7 +713,7 @@ public class ClaudeGatewayService {
                 downstream.setContentType("application/json");
                 trackApiUsage(clientApiKey, requestId, null, path, "GET",
                         status, null, duration, headers, errorBody);
-                requestLogService.logRequest(requestId, clientApiKey, "GET", path,
+                requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "GET", path,
                         null, headers, null, status, errorBody, duration,
                         TokenUsage.empty(), errorBody);
                 downstream.getOutputStream().write(errorBody.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -746,7 +747,7 @@ public class ClaudeGatewayService {
 
             trackApiUsage(clientApiKey, requestId, null, path, "GET",
                     status, null, duration, headers, null);
-            requestLogService.logRequest(requestId, clientApiKey, "GET", path,
+            requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "GET", path,
                     null, headers, null, status, "{\"_binary\":true}", duration,
                     TokenUsage.empty(), null);
         } finally {
@@ -830,7 +831,7 @@ public class ClaudeGatewayService {
                     response.code(), null, duration, headers,
                     response.isSuccessful() ? null : responseBody);
 
-            requestLogService.logRequest(requestId, clientApiKey, upperMethod, path,
+            requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), upperMethod, path,
                     null, headers, expectsBody ? requestBody : null,
                     response.code(), responseBody, duration,
                     TokenUsage.empty(),
@@ -937,7 +938,7 @@ public class ClaudeGatewayService {
 
         log.info("========================================");
         log.info("agent_log [{}] POST {} (stream) - 模型: {}, API Key: {}, 上游: {}",
-                requestId, path, model, clientApiKey, primaryUpstream.name);
+                requestId, path, model, ApiKeyLogMask.mask(clientApiKey), primaryUpstream.name);
         log.info("上游配置: baseUrl={}, timeout={}ms, maxInputTokens={}",
                 primaryUpstream.baseUrl, primaryUpstream.timeout, primaryUpstream.maxInputTokens);
         String requestBodyLog = requestBody.length() > 200 ? requestBody.substring(0, 200) + "..." : requestBody;
@@ -1202,7 +1203,7 @@ public class ClaudeGatewayService {
                         trackApiUsageWithTokens(clientApiKey, requestId, model, path, "POST",
                                 200, finalUsage, duration, ttft, headers);
 
-                        requestLogService.logRequest(requestId, (clientApiKey), "POST", path,
+                        requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "POST", path,
                                 model, headers, originalRequestBody, 200,
                                 "{\"type\":\"message_stream\",\"status\":\"completed\"}",
                                 duration, finalUsage, null);
@@ -1216,7 +1217,7 @@ public class ClaudeGatewayService {
                         trackApiUsage(clientApiKey, requestId, model, path, "POST",
                                 statusCode, null, duration, headers, errorMsg);
 
-                        requestLogService.logRequest(requestId, (clientApiKey), "POST", path,
+                        requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "POST", path,
                                 model, headers, originalRequestBody, statusCode, errorBody, duration,
                                 TokenUsage.empty(), errorMsg);
                     }
@@ -1305,7 +1306,7 @@ public class ClaudeGatewayService {
             trackApiUsage(clientApiKey, requestId, model, path, "POST",
                     408, null, duration, headers, "请求超时");
 
-            requestLogService.logRequest(requestId, (clientApiKey), "POST", path,
+            requestLogService.logRequest(requestId, ApiKeyLogMask.mask(clientApiKey), "POST", path,
                     model, headers, originalRequestBody, 408, null, duration,
                     TokenUsage.empty(), "请求超时");
 
