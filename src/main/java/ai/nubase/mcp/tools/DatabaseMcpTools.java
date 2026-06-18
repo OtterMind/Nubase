@@ -187,9 +187,13 @@ public class DatabaseMcpTools {
     @Tool(description = "Executes raw SQL query in the database. " +
             "Parameter: sqlQuery - The SQL query to execute (DDL, DML, or SELECT). " +
             "Supports multiple SQL statements separated by semicolons. " +
-            "Returns individual results for each statement.")
+            "Returns individual results for each statement. Requires service_role MCP apikey.")
     public Object executeSql(String sqlQuery) {
         try {
+            Map<String, Object> guard = requireServiceRole("execute SQL");
+            if (guard != null) {
+                return guard;
+            }
             log.info("MCP_Tool_USED- executeSql called");
             SqlRisk risk = sqlRiskClassifier.classify(sqlQuery);
             DatabaseConfig dbConfig = MultiTenancyContext.getDatabaseConfig();
@@ -264,9 +268,13 @@ public class DatabaseMcpTools {
      */
     @Tool(description = "Initialize the physical database for the current app. " +
             "Checks if the database has already been initialized and performs initialization if needed. " +
-            "No parameters required - uses the current database context.")
+            "No parameters required - uses the current database context. Requires service_role MCP apikey.")
     public Object initDatabase() {
         try {
+            Map<String, Object> guard = requireServiceRole("initialize database");
+            if (guard != null) {
+                return guard;
+            }
             log.info("MCP_Tool_USED - initDatabase called");
             // Get current database configuration from context
             DatabaseConfig dbConfig = MultiTenancyContext.getDatabaseConfig();
@@ -337,6 +345,18 @@ public class DatabaseMcpTools {
                     "error", "Failed to initialize database: " + e.getMessage()
             );
         }
+    }
+
+    /**
+     * Align with other MCP admin tools and HTTP {@code /auth/v1/admin/sql/execute}:
+     * raw SQL and physical DB init run with owner-level JDBC and must not be callable
+     * with anon/authenticated project apikeys.
+     */
+    private Map<String, Object> requireServiceRole(String action) {
+        if (!MultiTenancyContext.isServiceRole()) {
+            return Map.of("success", false, "error", "Cannot " + action + ": service_role MCP apikey is required");
+        }
+        return null;
     }
 
     /**
