@@ -95,16 +95,7 @@ public class QueryPlanner {
                 .collect(Collectors.toList()));
         }
 
-        // Handle Range header for pagination
-        if (request.getRange() != null) {
-            RangeHeader range = request.getRange();
-            if (range.getStart() != null) {
-                builder.offset(range.getStart());
-            }
-            if (range.getEnd() != null && range.getStart() != null) {
-                builder.limit(range.getEnd() - range.getStart() + 1);
-            }
-        }
+        applyReadPagination(builder, request.getRange());
 
         // Handle filters (for filtering function results)
         if (request.getFilters() != null && !request.getFilters().isEmpty()) {
@@ -192,16 +183,24 @@ public class QueryPlanner {
                 .collect(Collectors.toList()));
         }
 
-        // Handle Range header for pagination
-        if (request.getRange() != null) {
-            RangeHeader range = request.getRange();
-            if (range.getStart() != null) {
-                builder.offset(range.getStart());
-            }
-            if (range.getEnd() != null && range.getStart() != null) {
-                builder.limit(range.getEnd() - range.getStart() + 1);
-            }
+        applyReadPagination(builder, request.getRange());
+    }
+
+    private void applyReadPagination(QueryPlan.QueryPlanBuilder builder, RangeHeader range) {
+        Integer dbMaxRows = resolveDbMaxRows();
+        PostgrestRowLimitResolver.ResolvedPagination pagination =
+                PostgrestRowLimitResolver.resolve(range, dbMaxRows);
+        if (pagination.offset() != null) {
+            builder.offset(pagination.offset());
         }
+        if (pagination.limit() != null) {
+            builder.limit(pagination.limit());
+        }
+    }
+
+    private Integer resolveDbMaxRows() {
+        var config = MultiTenancyContext.getDatabaseConfig();
+        return config != null ? config.getDbMaxRows() : null;
     }
 
     private void buildInsertPlan(QueryPlan.QueryPlanBuilder builder, ApiRequest request) {
