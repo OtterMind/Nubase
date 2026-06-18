@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button, Input, Label } from '@nubase/ui';
 import { apiFetch, type ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { useI18n } from '@/lib/i18n';
 
 interface PlatformAuthResponse {
   access_token: string;
@@ -32,6 +33,7 @@ interface PlatformConfig {
 export default function SignUpPage() {
   const router = useRouter();
   const setAuth = useSession((s) => s.setAuth);
+  const { tr } = useI18n();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -75,12 +77,12 @@ export default function SignUpPage() {
       });
       if (isPending(res)) {
         setPendingEmail(res.email);
-        setNotice(`We sent a 6-digit code to ${res.email}.`);
+        setNotice(tr('auth.confirmEmail.sent', { email: res.email }));
       } else {
         completeLogin(res);
       }
     } catch (err) {
-      setError(parseError(err as ApiError) ?? 'Sign up failed.');
+      setError(parseError(err as ApiError) ?? tr('auth.error.signUp'));
     } finally {
       setLoading(false);
     }
@@ -97,7 +99,7 @@ export default function SignUpPage() {
       });
       completeLogin(res);
     } catch (err) {
-      setError(parseError(err as ApiError) ?? 'Verification failed.');
+      setError(parseError(err as ApiError) ?? tr('auth.error.verify'));
     } finally {
       setLoading(false);
     }
@@ -111,9 +113,9 @@ export default function SignUpPage() {
         method: 'POST',
         body: { email: pendingEmail },
       });
-      setNotice('A new code is on its way.');
+      setNotice(tr('auth.confirmEmail.resent'));
     } catch {
-      setNotice('A new code is on its way.');
+      setNotice(tr('auth.confirmEmail.resent'));
     }
   }
 
@@ -121,15 +123,12 @@ export default function SignUpPage() {
     return (
       <div className="space-y-4">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Sign-ups are closed</h1>
-          <p className="text-sm text-muted-foreground">
-            This workspace doesn&apos;t accept public sign-ups. Ask an existing super admin to invite
-            you via the project members or platform users page.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{tr('auth.signup.closedTitle')}</h1>
+          <p className="text-sm text-muted-foreground">{tr('auth.signup.closedBody')}</p>
         </div>
         <Link href="/login" className="inline-block">
           <Button variant="outline" className="w-full">
-            Back to sign in
+            {tr('auth.signup.back')}
           </Button>
         </Link>
       </div>
@@ -140,14 +139,14 @@ export default function SignUpPage() {
     return (
       <div className="space-y-6">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Confirm your email</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{tr('auth.confirmEmail.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            Enter the 6-digit code we emailed to <span className="font-medium">{pendingEmail}</span>.
+            {tr('auth.confirmEmail.body', { email: pendingEmail })}
           </p>
         </div>
         <form onSubmit={onVerify} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="code">Verification code</Label>
+            <Label htmlFor="code">{tr('auth.verificationCode')}</Label>
             <Input
               id="code"
               inputMode="numeric"
@@ -162,7 +161,7 @@ export default function SignUpPage() {
           {notice ? <p className="text-xs text-muted-foreground">{notice}</p> : null}
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
           <Button type="submit" disabled={loading || code.length < 6} className="w-full">
-            {loading ? 'Verifying…' : 'Verify & continue'}
+            {loading ? tr('auth.confirmEmail.verifying') : tr('auth.confirmEmail.verify')}
           </Button>
         </form>
         <button
@@ -170,7 +169,7 @@ export default function SignUpPage() {
           onClick={onResend}
           className="text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
         >
-          Didn&apos;t get it? Resend code
+          {tr('auth.confirmEmail.resend')}
         </button>
       </div>
     );
@@ -179,24 +178,22 @@ export default function SignUpPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Create your Studio account</h1>
-        <p className="text-sm text-muted-foreground">
-          Platform admin access to manage all your nubase projects.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tr('auth.signup.title')}</h1>
+        <p className="text-sm text-muted-foreground">{tr('auth.signup.subtitle')}</p>
       </div>
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="fullName">Full name</Label>
+          <Label htmlFor="fullName">{tr('auth.fullName')}</Label>
           <Input
             id="fullName"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             autoComplete="name"
-            placeholder="Optional"
+            placeholder={tr('auth.optional')}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{tr('auth.email')}</Label>
           <Input
             id="email"
             type="email"
@@ -207,7 +204,7 @@ export default function SignUpPage() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">{tr('auth.password')}</Label>
           <Input
             id="password"
             type="password"
@@ -217,17 +214,17 @@ export default function SignUpPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+          <p className="text-xs text-muted-foreground">{tr('auth.signup.passwordHelp')}</p>
         </div>
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
         <Button type="submit" disabled={loading} className="w-full">
-          {loading ? 'Creating account…' : 'Create account'}
+          {loading ? tr('auth.signup.submitting') : tr('auth.signup.submit')}
         </Button>
       </form>
       <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{' '}
+        {tr('auth.signup.hasAccount')}{' '}
         <Link href="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
-          Sign in
+          {tr('auth.signup.signIn')}
         </Link>
       </p>
     </div>

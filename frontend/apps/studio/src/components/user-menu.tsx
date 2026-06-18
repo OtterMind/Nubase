@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation';
 import { LogOut, User, FolderGit2, ShieldCheck, Settings } from 'lucide-react';
 import { cn } from '@nubase/ui';
 import { useSession, isSuperAdmin } from '@/lib/session';
+import { LanguageToggle, useI18n } from '@/lib/i18n';
 import { ThemeToggle } from './theme-toggle';
 
 export function UserMenu({ className }: { className?: string }) {
   const router = useRouter();
   const { user, signOut } = useSession();
+  const { tr } = useI18n();
   const superAdmin = isSuperAdmin(user);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -44,6 +46,7 @@ export function UserMenu({ className }: { className?: string }) {
 
   return (
     <div className={cn('flex items-center gap-1.5', className)}>
+      <LanguageToggle />
       <ThemeToggle />
       <div ref={wrapRef} className="relative">
       <button
@@ -51,7 +54,7 @@ export function UserMenu({ className }: { className?: string }) {
         className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-[11px] font-bold uppercase shadow-sm transition-opacity hover:opacity-90"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Account menu"
+        aria-label={tr('user.menu')}
         title={user.email}
       >
         {initials}
@@ -63,22 +66,22 @@ export function UserMenu({ className }: { className?: string }) {
           className="absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl shadow-slate-950/10"
         >
           <div className="border-b border-border bg-muted/35 px-3 py-2.5 text-xs">
-            <div className="font-semibold">{user.fullName ?? 'Signed in'}</div>
+            <div className="font-semibold">{user.fullName ?? tr('user.signedIn')}</div>
             <div className="truncate text-muted-foreground">{user.email}</div>
           </div>
           <MenuLink href="/projects" icon={FolderGit2} onClick={() => setOpen(false)}>
-            All projects
+            {tr('shell.nav.allProjects')}
           </MenuLink>
           <MenuLink href="/account" icon={User} onClick={() => setOpen(false)}>
-            Account
+            {tr('shell.nav.account')}
           </MenuLink>
           {superAdmin ? (
             <>
               <MenuLink href="/admin/users" icon={ShieldCheck} onClick={() => setOpen(false)}>
-                Platform users
+                {tr('user.platformUsers')}
               </MenuLink>
               <MenuLink href="/admin/settings" icon={Settings} onClick={() => setOpen(false)}>
-                Platform settings
+                {tr('user.platformSettings')}
               </MenuLink>
             </>
           ) : null}
@@ -87,7 +90,7 @@ export function UserMenu({ className }: { className?: string }) {
             className="flex w-full items-center gap-2 border-t border-border px-3 py-2.5 text-left text-sm font-medium text-destructive hover:bg-accent"
             role="menuitem"
           >
-            <LogOut className="h-4 w-4" /> Sign out
+            <LogOut className="h-4 w-4" /> {tr('user.signOut')}
           </button>
         </div>
       ) : null}

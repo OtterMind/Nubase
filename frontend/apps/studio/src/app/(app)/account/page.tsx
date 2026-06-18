@@ -15,10 +15,12 @@ import {
 } from '@nubase/ui';
 import { apiFetch, type ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { useI18n } from '@/lib/i18n';
 
 export default function AccountPage() {
   const router = useRouter();
   const { user, platformKey, hasHydrated } = useSession();
+  const { tr } = useI18n();
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -31,20 +33,20 @@ export default function AccountPage() {
   return (
     <div className="w-full max-w-2xl space-y-6 p-8">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
-        <p className="text-sm text-muted-foreground">Your platform user profile.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tr('account.title')}</h1>
+        <p className="text-sm text-muted-foreground">{tr('account.subtitle')}</p>
       </header>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Profile</CardTitle>
-          <CardDescription>Identity used when calling the platform API.</CardDescription>
+          <CardTitle className="text-base">{tr('account.profile')}</CardTitle>
+          <CardDescription>{tr('account.profileDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <Row label="Email" value={user.email} />
-          <Row label="Full name" value={user.fullName || '—'} />
+          <Row label={tr('auth.email')} value={user.email} />
+          <Row label={tr('account.fullName')} value={user.fullName || '—'} />
           <div className="grid grid-cols-[140px_1fr] gap-4">
-            <span className="text-xs text-muted-foreground">Role</span>
+            <span className="text-xs text-muted-foreground">{tr('account.role')}</span>
             <div>
               {user.role === 'super_admin' ? (
                 <Badge variant="success">super admin</Badge>
@@ -53,12 +55,12 @@ export default function AccountPage() {
               )}
               <p className="mt-1 text-xs text-muted-foreground">
                 {user.role === 'super_admin'
-                  ? 'You can see every project in this workspace.'
-                  : 'You can only see projects you own or were invited to.'}
+                  ? tr('account.roleSuper')
+                  : tr('account.roleUser')}
               </p>
             </div>
           </div>
-          <Row label="User ID" value={user.id} mono />
+          <Row label={tr('account.userId')} value={user.id} mono />
         </CardContent>
       </Card>
 
@@ -68,6 +70,7 @@ export default function AccountPage() {
 }
 
 function ChangePasswordCard({ bearer }: { bearer: string | null }) {
+  const { tr } = useI18n();
   // 'form' collects passwords; 'code' is shown after a code has been emailed.
   const [step, setStep] = useState<'form' | 'code'>('form');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -89,9 +92,9 @@ function ChangePasswordCard({ bearer }: { bearer: string | null }) {
         body: { currentPassword },
       });
       setStep('code');
-      setNotice('We emailed you a 6-digit confirmation code.');
+      setNotice(tr('account.passwordOtpSent'));
     } catch (err) {
-      setError(parseError(err as ApiError) ?? 'Could not start the password change.');
+      setError(parseError(err as ApiError) ?? tr('account.passwordOtpFailed'));
     } finally {
       setLoading(false);
     }
@@ -111,9 +114,9 @@ function ChangePasswordCard({ bearer }: { bearer: string | null }) {
       setCurrentPassword('');
       setNewPassword('');
       setCode('');
-      setNotice('Password updated.');
+      setNotice(tr('account.passwordUpdated'));
     } catch (err) {
-      setError(parseError(err as ApiError) ?? 'Could not change the password.');
+      setError(parseError(err as ApiError) ?? tr('account.passwordChangeFailed'));
     } finally {
       setLoading(false);
     }
@@ -122,16 +125,14 @@ function ChangePasswordCard({ bearer }: { bearer: string | null }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Security</CardTitle>
-        <CardDescription>
-          Change your password. We email a confirmation code to verify it&apos;s you.
-        </CardDescription>
+        <CardTitle className="text-base">{tr('account.security')}</CardTitle>
+        <CardDescription>{tr('account.securityDescription')}</CardDescription>
       </CardHeader>
       <CardContent>
         {step === 'form' ? (
           <form onSubmit={requestCode} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="currentPassword">Current password</Label>
+              <Label htmlFor="currentPassword">{tr('account.currentPassword')}</Label>
               <Input
                 id="currentPassword"
                 type="password"
@@ -142,7 +143,7 @@ function ChangePasswordCard({ bearer }: { bearer: string | null }) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="newPassword">New password</Label>
+              <Label htmlFor="newPassword">{tr('account.newPassword')}</Label>
               <Input
                 id="newPassword"
                 type="password"
@@ -152,18 +153,18 @@ function ChangePasswordCard({ bearer }: { bearer: string | null }) {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+              <p className="text-xs text-muted-foreground">{tr('auth.signup.passwordHelp')}</p>
             </div>
             {notice ? <p className="text-xs text-muted-foreground">{notice}</p> : null}
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
             <Button type="submit" disabled={loading}>
-              {loading ? 'Sending code…' : 'Continue'}
+              {loading ? tr('account.sendingCode') : tr('account.continue')}
             </Button>
           </form>
         ) : (
           <form onSubmit={confirmChange} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="pwCode">Confirmation code</Label>
+              <Label htmlFor="pwCode">{tr('account.confirmationCode')}</Label>
               <Input
                 id="pwCode"
                 inputMode="numeric"
@@ -179,7 +180,7 @@ function ChangePasswordCard({ bearer }: { bearer: string | null }) {
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
             <div className="flex gap-2">
               <Button type="submit" disabled={loading || code.length < 6}>
-                {loading ? 'Updating…' : 'Change password'}
+                {loading ? tr('account.updating') : tr('account.changePassword')}
               </Button>
               <Button
                 type="button"
@@ -191,7 +192,7 @@ function ChangePasswordCard({ bearer }: { bearer: string | null }) {
                   setNotice(null);
                 }}
               >
-                Cancel
+                {tr('account.cancel')}
               </Button>
             </div>
           </form>

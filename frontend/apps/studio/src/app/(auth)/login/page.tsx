@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Button, Input, Label } from '@nubase/ui';
 import { API_BASE, apiFetch, type ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { useI18n } from '@/lib/i18n';
 
 interface PlatformAuthResponse {
   access_token: string;
@@ -95,6 +96,7 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const setAuth = useSession((s) => s.setAuth);
+  const { tr } = useI18n();
   const next = safeNext(searchParams.get('next'));
 
   const [email, setEmail] = useState('');
@@ -145,7 +147,7 @@ function LoginContent() {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     if (params.get('oauth_error')) {
-      setError('Third-party sign in failed. Please try again.');
+      setError(tr('auth.error.thirdParty'));
     }
     const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
     if (!hash) return;
@@ -165,10 +167,10 @@ function LoginContent() {
         });
       })
       .catch(() => {
-        setError('Sign in session could not be established. Please try again.');
+        setError(tr('auth.error.session'));
         setLoading(false);
       });
-  }, [completeLogin]);
+  }, [completeLogin, tr]);
 
   // Google One Tap: auto-detect a signed-in Google account and float the prompt (top-right) so the
   // user can sign in with one click — no inline button next to the password form. Users not signed
@@ -196,7 +198,7 @@ function LoginContent() {
             })
               .then(completeLogin)
               .catch((err) => {
-                setError(parseError(err as ApiError) ?? 'Google sign in failed.');
+                setError(parseError(err as ApiError) ?? tr('auth.error.google'));
                 setLoading(false);
               });
           },
@@ -209,7 +211,7 @@ function LoginContent() {
     return () => {
       cancelled = true;
     };
-  }, [config, completeLogin, pendingEmail]);
+  }, [config, completeLogin, pendingEmail, tr]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -222,13 +224,13 @@ function LoginContent() {
       });
       if (isPending(res)) {
         setPendingEmail(res.email);
-        setNotice(`We sent a 6-digit code to ${res.email}.`);
+        setNotice(tr('auth.confirmEmail.sent', { email: res.email }));
       } else {
         completeLogin(res);
       }
     } catch (err) {
       const e = err as ApiError;
-      setError(parseError(e) ?? 'Sign in failed.');
+      setError(parseError(e) ?? tr('auth.error.signIn'));
     } finally {
       setLoading(false);
     }
@@ -245,7 +247,7 @@ function LoginContent() {
       });
       completeLogin(res);
     } catch (err) {
-      setError(parseError(err as ApiError) ?? 'Verification failed.');
+      setError(parseError(err as ApiError) ?? tr('auth.error.verify'));
       setLoading(false);
     }
   }
@@ -260,7 +262,7 @@ function LoginContent() {
     } catch {
       /* always report sent — no account enumeration */
     }
-    setNotice('A new code is on its way.');
+    setNotice(tr('auth.confirmEmail.resent'));
   }
 
   // One Tap (google_enabled) floats as an overlay, so the inline button row only shows the
@@ -271,14 +273,14 @@ function LoginContent() {
     return (
       <div className="space-y-6">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Confirm your email</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{tr('auth.confirmEmail.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            Enter the 6-digit code we emailed to <span className="font-medium">{pendingEmail}</span>.
+            {tr('auth.confirmEmail.body', { email: pendingEmail })}
           </p>
         </div>
         <form onSubmit={onVerify} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="code">Verification code</Label>
+            <Label htmlFor="code">{tr('auth.verificationCode')}</Label>
             <Input
               id="code"
               inputMode="numeric"
@@ -293,7 +295,7 @@ function LoginContent() {
           {notice ? <p className="text-xs text-muted-foreground">{notice}</p> : null}
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
           <Button type="submit" disabled={loading || code.length < 6} className="w-full">
-            {loading ? 'Verifying…' : 'Verify & continue'}
+            {loading ? tr('auth.confirmEmail.verifying') : tr('auth.confirmEmail.verify')}
           </Button>
         </form>
         <button
@@ -301,7 +303,7 @@ function LoginContent() {
           onClick={onResend}
           className="block w-full text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
         >
-          Didn&apos;t get it? Resend code
+          {tr('auth.confirmEmail.resend')}
         </button>
       </div>
     );
@@ -310,10 +312,8 @@ function LoginContent() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Sign in to Studio</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your nubase projects, databases and tenants.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{tr('auth.login.title')}</h1>
+        <p className="text-sm text-muted-foreground">{tr('auth.login.subtitle')}</p>
       </div>
 
       {showOAuth ? (
@@ -329,7 +329,7 @@ function LoginContent() {
                 <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
                 <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
               </svg>
-              Continue with Google
+              {tr('auth.login.google')}
             </a>
           ) : null}
           {config?.github_enabled ? (
@@ -340,12 +340,12 @@ function LoginContent() {
               <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-current">
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z" />
               </svg>
-              Continue with GitHub
+              {tr('auth.login.github')}
             </a>
           ) : null}
           <div className="flex items-center gap-3">
             <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">or</span>
+            <span className="text-xs text-muted-foreground">{tr('auth.login.or')}</span>
             <span className="h-px flex-1 bg-border" />
           </div>
         </div>
@@ -353,7 +353,7 @@ function LoginContent() {
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{tr('auth.email')}</Label>
           <Input
             id="email"
             type="email"
@@ -365,7 +365,7 @@ function LoginContent() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">{tr('auth.password')}</Label>
           <Input
             id="password"
             type="password"
@@ -377,13 +377,13 @@ function LoginContent() {
         </div>
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
         <Button type="submit" disabled={loading} className="w-full">
-          {loading ? 'Signing in…' : 'Sign in'}
+          {loading ? tr('auth.login.submitting') : tr('auth.login.submit')}
         </Button>
       </form>
       <p className="text-center text-sm text-muted-foreground">
-        Don&apos;t have an account?{' '}
+        {tr('auth.login.noAccount')}{' '}
         <Link href="/sign-up" className="font-medium text-foreground underline-offset-4 hover:underline">
-          Sign up
+          {tr('auth.login.signUp')}
         </Link>
       </p>
     </div>

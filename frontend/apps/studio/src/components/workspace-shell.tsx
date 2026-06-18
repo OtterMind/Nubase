@@ -31,10 +31,11 @@ import { cn } from '@nubase/ui';
 import { useSession, isProjectReady } from '@/lib/session';
 import { apiFetch } from '@/lib/api';
 import { useProjectRef } from '@/lib/route-params';
+import { type MessageKey, useI18n } from '@/lib/i18n';
 import { UserMenu } from './user-menu';
 
 interface NavItem {
-  label: string;
+  labelKey: MessageKey;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   /** Exact match (no startsWith) — used for the workspace root link so it doesn't match /projects/foo. */
@@ -42,26 +43,26 @@ interface NavItem {
 }
 
 const WORKSPACE_NAV: NavItem[] = [
-  { label: 'All projects', href: '/projects', icon: FolderGit2 },
-  { label: 'New project', href: '/new', icon: Plus },
-  { label: 'Account', href: '/account', icon: User },
+  { labelKey: 'shell.nav.allProjects', href: '/projects', icon: FolderGit2 },
+  { labelKey: 'shell.nav.newProject', href: '/new', icon: Plus },
+  { labelKey: 'shell.nav.account', href: '/account', icon: User },
 ];
 
 function projectNav(ref: string): NavItem[] {
   return [
-    { label: 'Home', href: `/project/${ref}`, icon: Home, exact: true },
-    { label: 'Table Editor', href: `/project/${ref}/editor`, icon: Table2 },
-    { label: 'SQL Editor', href: `/project/${ref}/sql`, icon: Terminal },
-    { label: 'Authentication', href: `/project/${ref}/auth`, icon: Users },
-    { label: 'Storage', href: `/project/${ref}/storage`, icon: HardDrive },
-    { label: 'Assets', href: `/project/${ref}/assets`, icon: FileBox },
-    { label: 'Memory', href: `/project/${ref}/memory`, icon: Brain },
-    { label: 'AI Gateway', href: `/project/${ref}/ai-gateway`, icon: Bot },
-    { label: 'Functions', href: `/project/${ref}/functions`, icon: CloudCog },
-    { label: 'Cron', href: `/project/${ref}/cron`, icon: CalendarClock },
-    { label: 'Connect Agent', href: `/project/${ref}/connect-agent`, icon: Cable },
-    { label: 'Logs', href: `/project/${ref}/logs`, icon: Activity },
-    { label: 'Settings', href: `/project/${ref}/settings`, icon: Settings },
+    { labelKey: 'shell.nav.home', href: `/project/${ref}`, icon: Home, exact: true },
+    { labelKey: 'shell.nav.tableEditor', href: `/project/${ref}/editor`, icon: Table2 },
+    { labelKey: 'shell.nav.sqlEditor', href: `/project/${ref}/sql`, icon: Terminal },
+    { labelKey: 'shell.nav.authentication', href: `/project/${ref}/auth`, icon: Users },
+    { labelKey: 'shell.nav.storage', href: `/project/${ref}/storage`, icon: HardDrive },
+    { labelKey: 'shell.nav.assets', href: `/project/${ref}/assets`, icon: FileBox },
+    { labelKey: 'shell.nav.memory', href: `/project/${ref}/memory`, icon: Brain },
+    { labelKey: 'shell.nav.aiGateway', href: `/project/${ref}/ai-gateway`, icon: Bot },
+    { labelKey: 'shell.nav.functions', href: `/project/${ref}/functions`, icon: CloudCog },
+    { labelKey: 'shell.nav.cron', href: `/project/${ref}/cron`, icon: CalendarClock },
+    { labelKey: 'shell.nav.connectAgent', href: `/project/${ref}/connect-agent`, icon: Cable },
+    { labelKey: 'shell.nav.logs', href: `/project/${ref}/logs`, icon: Activity },
+    { labelKey: 'shell.nav.settings', href: `/project/${ref}/settings`, icon: Settings },
   ];
 }
 
@@ -84,6 +85,7 @@ export function WorkspaceShell({
   projectRef?: string;
   children: React.ReactNode;
 }) {
+  const { tr } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
   const project = useSession((s) => s.project);
@@ -193,7 +195,7 @@ export function WorkspaceShell({
             <>
               {!collapsed && (
                 <div className="mb-1 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                  Project
+                  {tr('shell.section.project')}
                 </div>
               )}
               {projectNav(activeProjectRef).map((item) => (
@@ -201,14 +203,14 @@ export function WorkspaceShell({
               ))}
               {!collapsed && (
                 <div className="mb-1 mt-5 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                  Workspace
+                  {tr('shell.section.workspace')}
                 </div>
               )}
             </>
           ) : (
             !collapsed && (
               <div className="mb-1 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                Workspace
+                {tr('shell.section.workspace')}
               </div>
             )
           )}
@@ -227,14 +229,14 @@ export function WorkspaceShell({
           )}
         >
           {!collapsed && (
-            <span className="text-[11px] font-medium text-muted-foreground">v0.1 · Self-hosted</span>
+            <span className="text-[11px] font-medium text-muted-foreground">{tr('shell.version')}</span>
           )}
           <button
             type="button"
             onClick={toggle}
             className="rounded-md border border-transparent p-1.5 text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? tr('shell.expand') : tr('shell.collapse')}
+            aria-label={collapsed ? tr('shell.expand') : tr('shell.collapse')}
           >
             {collapsed ? (
               <PanelLeftOpen className="h-3.5 w-3.5" />
@@ -263,8 +265,7 @@ export function WorkspaceShell({
           <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-xs text-amber-700 dark:text-amber-300">
             <AlertTriangle className="h-3.5 w-3.5" />
             <span>
-              Project is <strong className="font-semibold">{project?.initStatus?.toLowerCase()}</strong> —
-              the underlying database is not provisioned yet. Database, Auth and Storage pages will be empty.
+              {tr('shell.projectWarning', { status: project?.initStatus?.toLowerCase() ?? 'pending' })}
             </span>
           </div>
         ) : null}
@@ -295,6 +296,7 @@ function ProjectSwitcher({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const { tr } = useI18n();
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -326,9 +328,9 @@ function ProjectSwitcher({
           className="flex min-w-0 items-center gap-2 rounded-md px-1.5 py-1 font-semibold text-foreground transition-colors hover:bg-accent"
         >
           <FolderGit2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="hidden truncate sm:inline">Workspace</span>
+          <span className="hidden truncate sm:inline">{tr('shell.workspace')}</span>
           <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-            Local
+            {tr('shell.local')}
           </span>
         </Link>
         <span className="text-lg font-light text-muted-foreground/70">/</span>
@@ -347,7 +349,7 @@ function ProjectSwitcher({
         <div className="hidden min-w-0 items-center gap-2 md:flex">
           <span className="truncate font-mono text-[13px] font-semibold text-foreground">main</span>
           <span className="rounded-full border border-emerald-600/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">
-            Ready
+            {tr('shell.ready')}
           </span>
         </div>
       </div>
@@ -359,7 +361,7 @@ function ProjectSwitcher({
         >
           <div className="border-b border-border bg-muted/35 px-3 py-2.5">
             <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Switch project
+              {tr('shell.switchProject')}
             </div>
             <div className="mt-0.5 truncate text-xs text-muted-foreground">{activeProjectRef}</div>
           </div>
@@ -391,7 +393,7 @@ function ProjectSwitcher({
               );
             })
           ) : (
-            <div className="px-3 py-3 text-xs text-muted-foreground">No projects available.</div>
+            <div className="px-3 py-3 text-xs text-muted-foreground">{tr('shell.noProjects')}</div>
           )}
         </div>
       ) : null}
@@ -408,14 +410,16 @@ function SidebarLink({
   pathname: string;
   collapsed: boolean;
 }) {
+  const { tr } = useI18n();
   const Icon = item.icon;
   const active = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/');
+  const label = tr(item.labelKey);
   return (
     <Link
       href={item.href}
       // When collapsed, center the icon and drop the label. Native title attribute gives
       // free hover tooltips so users don't lose their bearings in icon-only mode.
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? label : undefined}
       className={cn(
         'flex items-center rounded-lg text-sm font-medium transition-colors',
         collapsed
@@ -427,7 +431,7 @@ function SidebarLink({
       )}
     >
       <Icon className="h-4 w-4 shrink-0" />
-      {!collapsed && <span className="truncate">{item.label}</span>}
+      {!collapsed && <span className="truncate">{label}</span>}
     </Link>
   );
 }

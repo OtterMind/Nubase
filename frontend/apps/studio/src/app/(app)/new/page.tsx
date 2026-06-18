@@ -15,6 +15,7 @@ import {
 } from '@nubase/ui';
 import { apiFetch, type ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { useI18n } from '@/lib/i18n';
 
 const REGIONS = [
   { value: 'us-east-1', label: 'US East (N. Virginia)' },
@@ -45,6 +46,7 @@ export default function NewProjectPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { platformKey, hasHydrated, setProject } = useSession();
+  const { tr } = useI18n();
 
   const [name, setName] = useState('');
   const [ref, setRef] = useState('');
@@ -87,12 +89,12 @@ export default function NewProjectPage() {
       // provisioning (phase 2) on mount — the user doesn't have to click anything.
       // Keeping create and provision as separate calls keeps the UI responsive and
       // lets the same auto-provision path recover historical stuck projects.
-      toast({ variant: 'success', title: 'Project created', message: 'Initializing the database…' });
+      toast({ variant: 'success', title: tr('newProject.created'), message: tr('newProject.initializing') });
       router.push(`/project/${appCode}`);
     } catch (err) {
-      const msg = parseError(err as ApiError) ?? 'Failed to create project.';
+      const msg = parseError(err as ApiError) ?? tr('newProject.failed');
       setError(msg);
-      toast({ variant: 'error', title: 'Create failed', message: msg });
+      toast({ variant: 'error', title: tr('newProject.createFailed'), message: msg });
       setLoading(false);
     }
   }
@@ -107,27 +109,24 @@ export default function NewProjectPage() {
     <div className="w-full max-w-2xl p-8">
       <Card>
         <CardHeader>
-          <CardTitle>New project</CardTitle>
-          <CardDescription>
-            Save a project configuration. The Postgres database is provisioned automatically on the
-            next screen.
-          </CardDescription>
+          <CardTitle>{tr('newProject.title')}</CardTitle>
+          <CardDescription>{tr('newProject.subtitle')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Project name</Label>
+              <Label htmlFor="name">{tr('newProject.name')}</Label>
               <Input
                 id="name"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My CRM"
+                placeholder={tr('newProject.namePlaceholder')}
               />
-              <p className="text-xs text-muted-foreground">Shown in the dashboard.</p>
+              <p className="text-xs text-muted-foreground">{tr('newProject.nameHelp')}</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ref">Reference</Label>
+              <Label htmlFor="ref">{tr('newProject.ref')}</Label>
               <Input
                 id="ref"
                 required
@@ -141,21 +140,20 @@ export default function NewProjectPage() {
                 className="font-mono"
               />
               <p className="text-xs text-muted-foreground">
-                Lower-case, digits and underscores. Used as the API path segment, database name and JWT
-                <code className="mx-1">ref</code> claim. Cannot be changed later.
+                {tr('newProject.refHelp')}
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
+              <Label htmlFor="description">{tr('newProject.description')}</Label>
               <Input
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Internal CRM data"
+                placeholder={tr('newProject.descriptionPlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="region">Region</Label>
+              <Label htmlFor="region">{tr('newProject.region')}</Label>
               <select
                 id="region"
                 value={region}
@@ -169,16 +167,16 @@ export default function NewProjectPage() {
                 ))}
               </select>
               <p className="text-xs text-muted-foreground">
-                Visual only for now — self-hosted nubase runs against a single Postgres host.
+                {tr('newProject.regionHelp')}
               </p>
             </div>
             {error ? <p className="text-xs text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => router.back()} disabled={loading}>
-                Cancel
+                {tr('newProject.cancel')}
               </Button>
               <Button type="submit" disabled={loading || !effectiveRef}>
-                {loading ? 'Creating…' : 'Create project'}
+                {loading ? tr('newProject.creating') : tr('newProject.create')}
               </Button>
             </div>
           </form>

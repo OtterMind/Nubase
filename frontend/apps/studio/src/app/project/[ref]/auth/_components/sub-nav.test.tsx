@@ -4,8 +4,8 @@ import { AuthSubNav } from './sub-nav';
 
 // Stub next/link to a plain anchor for jsdom.
 vi.mock('next/link', () => ({
-  default: ({ href, children }: { href: string; children: React.ReactNode }) => (
-    <a href={href}>{children}</a>
+  default: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
+    <a href={href} {...props}>{children}</a>
   ),
 }));
 

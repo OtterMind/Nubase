@@ -26,6 +26,7 @@ import {
 } from '@nubase/ui';
 import { apiFetch, type ApiError } from '@/lib/api';
 import { useSession, isSuperAdmin } from '@/lib/session';
+import { useI18n } from '@/lib/i18n';
 
 interface ProjectSummary {
   ref: string;
@@ -71,6 +72,7 @@ function meaningfulDescription(p: { description?: string | null; ref: string; na
 
 export default function ProjectsPage() {
   const router = useRouter();
+  const { tr } = useI18n();
   const { platformKey, user, setProject, signOut, hasHydrated } = useSession();
   const superAdmin = isSuperAdmin(user);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -114,7 +116,7 @@ export default function ProjectsPage() {
           router.replace('/login');
           return;
         }
-        setError(err.message ?? 'Failed to load projects.');
+        setError(err.message ?? tr('projects.loadError'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -122,7 +124,7 @@ export default function ProjectsPage() {
     return () => {
       cancelled = true;
     };
-  }, [hasHydrated, platformKey, router, signOut]);
+  }, [hasHydrated, platformKey, router, signOut, tr]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -165,34 +167,33 @@ export default function ProjectsPage() {
           <div className="min-w-0">
             <div className="mb-2 flex items-center gap-2">
               <span className="rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                workspace
+                {tr('projects.scope')}
               </span>
               {superAdmin ? (
                 <span className="rounded-md bg-brand/10 px-2 py-1 text-[11px] font-medium text-brand">
-                  super admin
+                  {tr('projects.superAdmin')}
                 </span>
               ) : null}
             </div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              {superAdmin ? 'All projects' : 'Your projects'}
+              {superAdmin ? tr('projects.titleAll') : tr('projects.titleOwn')}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Select a project to manage database, auth, storage, and memory. The list is filtered to
-              the projects your platform key can access.
+              {tr('projects.subtitle')}
             </p>
           </div>
           <Link href="/new" className="shrink-0">
             <Button size="sm" className="w-full sm:w-auto">
-              <Plus className="h-3.5 w-3.5" /> New project
+              <Plus className="h-3.5 w-3.5" /> {tr('projects.new')}
             </Button>
           </Link>
         </div>
 
         <div className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4 sm:divide-y-0">
-          <StatTile label="Total" value={projects.length} icon={Database} />
-          <StatTile label="Ready" value={stats.ready} icon={CheckCircle2} tone="success" />
-          <StatTile label="Pending" value={stats.pending} icon={Clock3} tone="warning" />
-          <StatTile label="Needs attention" value={stats.failed} icon={AlertCircle} tone="danger" />
+          <StatTile label={tr('projects.total')} value={projects.length} icon={Database} />
+          <StatTile label={tr('projects.ready')} value={stats.ready} icon={CheckCircle2} tone="success" />
+          <StatTile label={tr('projects.pending')} value={stats.pending} icon={Clock3} tone="warning" />
+          <StatTile label={tr('projects.failed')} value={stats.failed} icon={AlertCircle} tone="danger" />
         </div>
       </section>
 
@@ -200,7 +201,7 @@ export default function ProjectsPage() {
         <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search projects by name, ref, or description"
+            placeholder={tr('projects.search')}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -217,9 +218,9 @@ export default function ProjectsPage() {
               view === 'grid' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
             )}
             aria-pressed={view === 'grid'}
-            aria-label="Grid view"
+            aria-label={tr('projects.gridView')}
           >
-            <LayoutGrid className="h-3.5 w-3.5" /> Grid
+            <LayoutGrid className="h-3.5 w-3.5" /> {tr('projects.grid')}
           </button>
           <button
             onClick={() => setView('list')}
@@ -228,9 +229,9 @@ export default function ProjectsPage() {
               view === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
             )}
             aria-pressed={view === 'list'}
-            aria-label="List view"
+            aria-label={tr('projects.listView')}
           >
-            <List className="h-3.5 w-3.5" /> List
+            <List className="h-3.5 w-3.5" /> {tr('projects.list')}
           </button>
         </div>
       </section>
@@ -262,17 +263,17 @@ export default function ProjectsPage() {
             </div>
             <div>
               <p className="text-sm font-medium">
-                {projects.length === 0 ? 'No projects yet' : 'No projects match your search'}
+                {projects.length === 0 ? tr('projects.emptyTitle') : tr('projects.emptySearchTitle')}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {projects.length === 0
-                  ? 'Create a project configuration to begin.'
-                  : 'Try a different name, ref, or description.'}
+                  ? tr('projects.emptyBody')
+                  : tr('projects.emptySearchBody')}
               </p>
             </div>
             {projects.length === 0 ? (
               <Link href="/new">
-                <Button size="sm">Create your first project</Button>
+                <Button size="sm">{tr('projects.createFirst')}</Button>
               </Link>
             ) : null}
           </CardContent>
@@ -298,12 +299,12 @@ export default function ProjectsPage() {
                     <StatusBadge initStatus={p.initStatus} healthStatus={p.healthStatus} />
                   </div>
                   <p className="mt-3 line-clamp-2 min-h-[32px] text-xs leading-4 text-muted-foreground">
-                    {meaningfulDescription(p) ?? 'No description provided.'}
+                    {meaningfulDescription(p) ?? tr('projects.noDescription')}
                   </p>
                 </div>
                 <div className="flex h-10 items-center justify-between border-t border-border bg-muted/20 px-4">
                   <span className="truncate text-[11px] text-muted-foreground">
-                    schema <span className="font-mono text-foreground/80">{p.schemaName ?? 'public'}</span>
+                    {tr('projects.schema')} <span className="font-mono text-foreground/80">{p.schemaName ?? 'public'}</span>
                   </span>
                   <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-foreground" />
                 </div>
@@ -317,10 +318,10 @@ export default function ProjectsPage() {
             <table className="w-full min-w-[760px] text-sm">
               <thead className="border-b border-border bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2.5 text-left font-medium">Project</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Reference</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Schema</th>
-                  <th className="px-4 py-2.5 text-left font-medium">Status</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{tr('projects.project')}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{tr('projects.reference')}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{tr('projects.schema')}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{tr('projects.status')}</th>
                   <th className="px-4 py-2.5" />
                 </tr>
               </thead>
@@ -334,7 +335,7 @@ export default function ProjectsPage() {
                     <td className="max-w-[340px] px-4 py-3">
                       <div className="truncate font-medium">{p.name}</div>
                       <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {meaningfulDescription(p) ?? 'No description provided.'}
+                        {meaningfulDescription(p) ?? tr('projects.noDescription')}
                       </div>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{p.ref}</td>
@@ -358,8 +359,11 @@ export default function ProjectsPage() {
       {filtered.length > PAGE_SIZE ? (
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-3 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <span>
-            Showing {(safePage - 1) * PAGE_SIZE + 1}-{Math.min(safePage * PAGE_SIZE, filtered.length)} of{' '}
-            {filtered.length}
+            {tr('projects.showing', {
+              start: (safePage - 1) * PAGE_SIZE + 1,
+              end: Math.min(safePage * PAGE_SIZE, filtered.length),
+              total: filtered.length,
+            })}
           </span>
           <div className="flex items-center gap-1">
             <Button
@@ -368,10 +372,10 @@ export default function ProjectsPage() {
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={safePage <= 1}
             >
-              <ChevronLeft className="h-3.5 w-3.5" /> Prev
+              <ChevronLeft className="h-3.5 w-3.5" /> {tr('projects.prev')}
             </Button>
             <span className="px-2">
-              Page {safePage} of {pageCount}
+              {tr('projects.page', { page: safePage, total: pageCount })}
             </span>
             <Button
               size="sm"
@@ -379,7 +383,7 @@ export default function ProjectsPage() {
               onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
               disabled={safePage >= pageCount}
             >
-              Next <ChevronRight className="h-3.5 w-3.5" />
+              {tr('projects.next')} <ChevronRight className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>

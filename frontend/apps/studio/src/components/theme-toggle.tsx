@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Moon, Sun } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
 
 const STORAGE_KEY = 'nubase.theme';
 
@@ -14,6 +15,7 @@ function applyTheme(t: Theme) {
 }
 
 export function ThemeToggle({ className }: { className?: string }) {
+  const { tr } = useI18n();
   const [theme, setTheme] = useState<Theme>('light');
 
   useEffect(() => {
@@ -34,12 +36,14 @@ export function ThemeToggle({ className }: { className?: string }) {
     }
   }
 
+  const label = theme === 'dark' ? tr('theme.light') : tr('theme.dark');
+
   return (
     <button
       onClick={toggle}
       className={'rounded-md border border-transparent p-1.5 text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground ' + (className ?? '')}
-      aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-      title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      aria-label={label}
+      title={label}
     >
       {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </button>
