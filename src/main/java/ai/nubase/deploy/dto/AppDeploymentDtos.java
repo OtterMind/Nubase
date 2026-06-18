@@ -118,4 +118,33 @@ public final class AppDeploymentDtos {
             List<RollbackActionResponse> actions
     ) {
     }
+
+    public record AppWorkerDeployMetadata(
+            String appCode,
+            String version,
+            String workerName,
+            String mainModule,
+            String serverEntrypointPath,
+            String clientDistPath,
+            String previewHost,
+            String compatibilityDate,
+            List<String> compatibilityFlags,
+            Map<String, String> envBindings,
+            Map<String, String> plainTextBindings,
+            Map<String, String> secretTextBindings
+    ) {
+    }
+
+    public record AppWorkerDeployResponse(
+            UUID deploymentId,
+            String provider,
+            String providerDeploymentId,
+            String previewUrl,
+            String status,
+            String assetManifestHash,
+            Integer assetFileCount,
+            Instant deployedAt,
+            String errorMessage
+    ) {
+    }
 }
