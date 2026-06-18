@@ -20,6 +20,7 @@ import ai.nubase.auth.dto.request.SignUpRequest;
 import ai.nubase.auth.dto.request.VerifyRequest;
 import ai.nubase.auth.util.TokenGenerator;
 import ai.nubase.common.context.MultiTenancyContext;
+import ai.nubase.common.util.HtmlEscape;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -220,7 +221,7 @@ public class AuthController {
             try {
                 Resource resource = resourceLoader.getResource("classpath:templates/verify-error.html");
                 String htmlContent = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-                htmlContent = htmlContent.replace("{{ERROR_MESSAGE}}", e.getMessage());
+                htmlContent = htmlContent.replace("{{ERROR_MESSAGE}}", HtmlEscape.escape(e.getMessage()));
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .contentType(MediaType.TEXT_HTML)
                         .body(htmlContent);
@@ -317,7 +318,7 @@ public class AuthController {
             try {
                 Resource resource = resourceLoader.getResource("classpath:templates/oauth-config-error.html");
                 String htmlContent = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-                htmlContent = htmlContent.replace("{{ERROR_MESSAGE}}", e.getMessage());
+                htmlContent = htmlContent.replace("{{ERROR_MESSAGE}}", HtmlEscape.escape(e.getMessage()));
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .contentType(MediaType.TEXT_HTML)
                         .body(htmlContent);
@@ -346,7 +347,7 @@ public class AuthController {
         if (error != null) {
             String errorHtml = String.format(
                     "<html><body><h1>Authentication Failed</h1><p>%s: %s</p></body></html>",
-                    error, errorDescription
+                    HtmlEscape.escape(error), HtmlEscape.escape(errorDescription)
             );
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .contentType(MediaType.TEXT_HTML)
@@ -399,7 +400,7 @@ public class AuthController {
                 }
                 return ResponseEntity.ok()
                         .contentType(MediaType.TEXT_HTML)
-                        .body("<html><body><p>code=" + authCode + "</p></body></html>");
+                        .body("<html><body><p>code=" + HtmlEscape.escape(authCode) + "</p></body></html>");
             }
 
             // Manual identity linking: attach the resolved identity to the existing user.
@@ -449,7 +450,7 @@ public class AuthController {
         } catch (Exception e) {
             String errorHtml = String.format(
                     "<html><body><h1>Authentication Failed</h1><p>%s</p></body></html>",
-                    e.getMessage()
+                    HtmlEscape.escape(e.getMessage())
             );
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .contentType(MediaType.TEXT_HTML)
