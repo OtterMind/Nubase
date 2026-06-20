@@ -135,6 +135,25 @@ const TOOL_TABLE: Record<string, ToolEntry> = {
     }, ['id']),
     handler: (args, _config, client) => client.deploymentRollback(args),
   },
+  app_workers_list: {
+    description: 'List the app workers (Cloudflare Workers) this project has deployed, with their latest version, preview URL and status. Scoped to the current project. Read-only.',
+    inputSchema: objectSchema({}),
+    handler: (_args, _config, client) => client.appWorkersList(),
+  },
+  app_worker_status: {
+    description: 'Get one deployed app worker for this project, enriched with live provider state. Read-only.',
+    inputSchema: objectSchema({
+      workerName: { type: 'string' },
+    }, ['workerName']),
+    handler: (args, _config, client) => client.appWorkerStatus(args),
+  },
+  app_worker_delete: {
+    description: 'Delete (undeploy) one app worker owned by this project. Write op; disabled unless NUBASE_ALLOW_ADMIN_WRITE=true. Only affects workers this project has deployed.',
+    inputSchema: objectSchema({
+      workerName: { type: 'string' },
+    }, ['workerName']),
+    handler: (args, _config, client) => client.appWorkerDelete(args),
+  },
   memory_context: {
     description: 'Return compact relevant memory context for a task. Scope defaults can come from NUBASE_USER_ID, NUBASE_AGENT_ID, and NUBASE_RUN_ID.',
     inputSchema: objectSchema({

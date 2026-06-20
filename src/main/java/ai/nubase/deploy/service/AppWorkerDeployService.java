@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -147,8 +148,26 @@ public class AppWorkerDeployService {
         if (StringUtils.hasText(contextApp) && !contextApp.equals(metadata.appCode())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "metadata.appCode must match project context");
         }
+        requireWorkerNameOwnedByApp(metadata.appCode(), metadata.workerName());
         if (serverFiles == null || serverFiles.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "serverFile is required");
+        }
+    }
+
+    /**
+     * The Cloudflare dispatch namespace is shared across tenants, so a custom workerName is only
+     * allowed when it is namespaced under the project's appCode. This prevents one project from
+     * deploying over another project's worker. When omitted, workerName defaults to appCode.
+     */
+    private void requireWorkerNameOwnedByApp(String appCode, String workerName) {
+        if (!StringUtils.hasText(workerName)) {
+            return;
+        }
+        String app = appCode.trim().toLowerCase(Locale.ROOT);
+        String worker = workerName.trim().toLowerCase(Locale.ROOT);
+        if (!worker.equals(app) && !worker.startsWith(app + "-")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "metadata.workerName must equal the project appCode or start with \"" + app + "-\"");
         }
     }
 
