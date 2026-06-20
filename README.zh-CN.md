@@ -5,8 +5,12 @@
 
 [English](README.md) · **简体中文**
 
+官网：[https://nubase.ai](https://nubase.ai)
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-10A074.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/nubase_cli?logo=npm&label=nubase_cli&color=cb3837)](https://www.npmjs.com/package/nubase_cli)
+[![Docker](https://img.shields.io/docker/v/ottermind/nubase?logo=docker&label=docker&color=2496ED)](https://hub.docker.com/r/ottermind/nubase)
+[![Docker pulls](https://img.shields.io/docker/pulls/ottermind/nubase?logo=docker&label=docker%20pulls&color=2496ED)](https://hub.docker.com/r/ottermind/nubase)
 [![GitHub stars](https://img.shields.io/github/stars/OtterMind/Nubase?style=social)](https://github.com/OtterMind/Nubase)
 
 **让 AI 写出的代码变成真正上线的应用。** Nubase 是一个开源、AI 原生的后端**与部署层**，由编码 Agent 直接驱动 —— 生成的应用几分钟内即可上线。八大能力模块集成在一个可自托管的服务中：**数据库（Database）、认证（Auth）、存储（Storage）、静态资源（Assets）、函数（Functions）、AI 网关（AI Gateway）、记忆（Memory）和定时任务（cron）**。

@@ -5,8 +5,12 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
+Official website: [https://nubase.ai](https://nubase.ai)
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-10A074.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/nubase_cli?logo=npm&label=nubase_cli&color=cb3837)](https://www.npmjs.com/package/nubase_cli)
+[![Docker](https://img.shields.io/docker/v/ottermind/nubase?logo=docker&label=docker&color=2496ED)](https://hub.docker.com/r/ottermind/nubase)
+[![Docker pulls](https://img.shields.io/docker/pulls/ottermind/nubase?logo=docker&label=docker%20pulls&color=2496ED)](https://hub.docker.com/r/ottermind/nubase)
 [![GitHub stars](https://img.shields.io/github/stars/OtterMind/Nubase?style=social)](https://github.com/OtterMind/Nubase)
 
 **Turn AI-written code into real apps.** Nubase is an open-source, AI-native backend **and deploy layer** that a coding agent drives directly — so a generated app goes live in minutes. Eight capability modules in one self-hostable service: **Database, Auth, Storage, Assets, Functions, AI Gateway, Memory, and cron**.
