@@ -20,7 +20,8 @@ class McpConfigTest {
         GatewayMcpTools gatewayMcpTools = new GatewayMcpTools(mock(ai.nubase.ai.gateway.repository.ApiKeyRepository.class));
         DeploymentsMcpTools deploymentsMcpTools = new DeploymentsMcpTools(
                 mock(ai.nubase.deploy.service.AppDeploymentService.class),
-                mock(ai.nubase.deploy.service.AppDeploymentRollbackService.class)
+                mock(ai.nubase.deploy.service.AppDeploymentRollbackService.class),
+                mock(ai.nubase.deploy.service.AppWorkerService.class)
         );
         FunctionsMcpTools functionsMcpTools = mock(FunctionsMcpTools.class);
         CronMcpTools cronMcpTools = mock(CronMcpTools.class);

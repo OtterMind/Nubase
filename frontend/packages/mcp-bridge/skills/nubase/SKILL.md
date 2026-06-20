@@ -58,11 +58,11 @@ Core:
 
 Backend ops (read), in module order (Database, Auth, Storage, AI Gateway): `db_export_schema`, `db_list_migrations`, `auth_list_users`, `auth_get_settings`, `storage_list_buckets`, `storage_list_objects`, `storage_create_signed_url`, `storage_create_signed_urls`, `gateway_list_keys`, `gateway_usage`, `gateway_usage_daily`, `gateway_usage_by_model`, `gateway_usage_logs`, `gateway_pricing`.
 
-Deploy (read), in module order (Assets, Functions, cron): `assets_list`, `functions_list`, `functions_logs`, `functions_secrets_list`, `cron_list`, `cron_get`, `cron_runs`.
+Deploy (read), in module order (Assets, Functions, cron, App workers): `assets_list`, `functions_list`, `functions_logs`, `functions_secrets_list`, `cron_list`, `cron_get`, `cron_runs`, `app_workers_list`, `app_worker_status`.
 
 Backend ops (write, gated by `NUBASE_ALLOW_ADMIN_WRITE=true`): `auth_create_user`, `auth_delete_user`, `auth_update_settings`, `auth_clear_settings`, `storage_create_bucket`, `storage_delete_bucket`, `storage_create_signed_upload_url`, `gateway_issue_key`, `gateway_revoke_key`.
 
-Deploy (write, gated by `NUBASE_ALLOW_ADMIN_WRITE=true`): `deploy_app`, `deployment_rollback`, `assets_upload`, `assets_delete`, `assets_update_settings`, `functions_new`, `functions_deploy`, `functions_invoke`, `functions_delete`, `functions_secrets_set`, `cron_create`, `cron_update`, `cron_delete`.
+Deploy (write, gated by `NUBASE_ALLOW_ADMIN_WRITE=true`): `deploy_app`, `deployment_rollback`, `assets_upload`, `assets_delete`, `assets_update_settings`, `functions_new`, `functions_deploy`, `functions_invoke`, `functions_delete`, `functions_secrets_set`, `cron_create`, `cron_update`, `cron_delete`, `app_worker_delete`.
 
 Project lifecycle (platform auth required with `NUBASE_PLATFORM_JWT` or `NUBASE_PLATFORM_KEY`): `projects_list`, `project_keys_admin`, `project_select_instructions`. `project_provision` and `project_update` are also gated by `NUBASE_ALLOW_ADMIN_WRITE=true`. Project delete is intentionally not exposed.
 
@@ -142,4 +142,5 @@ Use these focused references when the task is clearly scoped:
 - `references/ai-gateway.md`
 - `references/memory.md`
 - `references/cron.md` — schedule recurring jobs
+- `references/app-workers.md` — deploy & manage full app workers (server + bundled assets)
 - `references/security.md`

@@ -585,6 +585,24 @@ export class NubaseClient {
     );
   }
 
+  // --- App workers control plane (/deployments/admin/v1/app-workers) -------
+
+  appWorkersList() {
+    return this.request('/deployments/admin/v1/app-workers');
+  }
+
+  appWorkerStatus(args: Record<string, unknown>) {
+    const workerName = requiredString(args.workerName, 'workerName');
+    return this.request(`/deployments/admin/v1/app-workers/${encodeURIComponent(workerName)}`);
+  }
+
+  appWorkerDelete(args: Record<string, unknown>) {
+    const workerName = requiredString(args.workerName, 'workerName');
+    return this.guardedWrite('delete app worker', () =>
+      this.request(`/deployments/admin/v1/app-workers/${encodeURIComponent(workerName)}`, { method: 'DELETE' })
+    );
+  }
+
   // --- Project lifecycle control plane (/auth/v1/admin/projects) ----------
 
   projectsList() {

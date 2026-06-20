@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -131,6 +133,55 @@ class AppWorkerDeployServiceTest {
         assertThat(steps.getAllValues().get(2).stepName()).isEqualTo("cloudflare_app_worker_deploy");
         assertThat(steps.getAllValues().get(2).status()).isEqualTo(AppDeploymentStep.STATUS_FAILED);
         verify(deploymentService).complete(eq(deploymentId), any(CompleteDeploymentRequest.class));
+    }
+
+    @Test
+    void rejectsWorkerNameNotNamespacedUnderAppCode() {
+        var metadata = new AppWorkerDeployMetadata(
+                "appabc",
+                "v1",
+                "someone-elses-worker",
+                "server/index.js",
+                "server/index.js",
+                "dist/client",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        assertThatThrownBy(() -> service.deploy(metadata, List.of(serverFile()), List.of()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("workerName must equal the project appCode");
+
+        verify(deployer, org.mockito.Mockito.never()).deploy(any());
+        verify(deploymentService, org.mockito.Mockito.never()).create(any());
+    }
+
+    @Test
+    void allowsWorkerNameNamespacedUnderAppCode() {
+        UUID deploymentId = UUID.randomUUID();
+        when(deploymentService.create(any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
+                deploymentId, "appabc", "appabc", AppDeployment.STATUS_RUNNING, null, Map.of(),
+                null, null, "v1", Instant.now(), Instant.now(), null
+        ));
+        when(deployer.deploy(any(AppWorkerDeploymentRequest.class))).thenReturn(new AppWorkerDeploymentResult(
+                "cloudflare", "appabc-preview", "https://appabc-preview.ottermind.app", "deployed",
+                "asset-hash", 0, Instant.parse("2026-06-17T00:00:00Z")
+        ));
+        var metadata = new AppWorkerDeployMetadata(
+                "appabc", "v1", "appabc-preview", "server/index.js", "server/index.js",
+                "dist/client", null, null, null, null, null, null
+        );
+
+        var response = service.deploy(metadata, List.of(serverFile()), List.of());
+
+        assertThat(response.status()).isEqualTo("deployed");
+        ArgumentCaptor<AppWorkerDeploymentRequest> request = ArgumentCaptor.forClass(AppWorkerDeploymentRequest.class);
+        verify(deployer).deploy(request.capture());
+        assertThat(request.getValue().workerName()).isEqualTo("appabc-preview");
     }
 
     private AppWorkerDeployMetadata metadata() {

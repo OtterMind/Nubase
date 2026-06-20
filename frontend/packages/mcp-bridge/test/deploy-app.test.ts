@@ -25,6 +25,9 @@ test('MCP tool list includes deploy_app', () => {
   assert.equal(names.has('deployment_status'), true);
   assert.equal(names.has('deployment_logs'), true);
   assert.equal(names.has('deployment_rollback'), true);
+  assert.equal(names.has('app_workers_list'), true);
+  assert.equal(names.has('app_worker_status'), true);
+  assert.equal(names.has('app_worker_delete'), true);
   assert.equal(names.has('projects_list'), true);
   assert.equal(names.has('project_keys_admin'), true);
   assert.equal(names.has('project_provision'), true);
@@ -41,6 +44,36 @@ test('MCP tool list includes deploy_app', () => {
   assert.equal(names.has('gateway_usage_by_model'), true);
   assert.equal(names.has('gateway_usage_logs'), true);
   assert.equal(names.has('gateway_pricing'), true);
+});
+
+test('app worker tools dispatch to the matching client method', async () => {
+  const calls: Array<{ op: string; args?: Record<string, unknown> }> = [];
+  const client = {
+    appWorkersList: async () => {
+      calls.push({ op: 'appWorkersList' });
+      return [{ workerName: 'my-app' }];
+    },
+    appWorkerStatus: async (args: Record<string, unknown>) => {
+      calls.push({ op: 'appWorkerStatus', args });
+      return { worker: { workerName: args.workerName }, existsOnProvider: true };
+    },
+    appWorkerDelete: async (args: Record<string, unknown>) => {
+      calls.push({ op: 'appWorkerDelete', args });
+      return { workerName: args.workerName, deleted: true };
+    },
+  } as unknown as Parameters<typeof callTool>[3];
+
+  const listed = await callTool('app_workers_list', {}, config(), client) as Array<Record<string, unknown>>;
+  assert.equal(listed[0]?.workerName, 'my-app');
+
+  const status = await callTool('app_worker_status', { workerName: 'my-app' }, config(), client) as Record<string, any>;
+  assert.equal(status.existsOnProvider, true);
+
+  const deleted = await callTool('app_worker_delete', { workerName: 'my-app' }, config(), client) as Record<string, any>;
+  assert.equal(deleted.deleted, true);
+
+  assert.deepEqual(calls.map((call) => call.op), ['appWorkersList', 'appWorkerStatus', 'appWorkerDelete']);
+  assert.equal(calls[1]?.args?.workerName, 'my-app');
 });
 
 test('deploy_app orchestrates migrations, functions, assets, cron, and memory', async () => {
