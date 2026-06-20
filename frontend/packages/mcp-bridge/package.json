@@ -24,7 +24,7 @@
     "access": "public"
   },
   "optionalDependencies": {
-    "esbuild": "0.21.5"
+    "esbuild": "0.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
