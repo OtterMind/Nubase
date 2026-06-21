@@ -105,12 +105,27 @@ class RemoteAdminMcpToolsTest {
     void deploymentRollbackRequiresServiceRole() {
         AppDeploymentService deploymentService = mock(AppDeploymentService.class);
         AppDeploymentRollbackService rollbackService = mock(AppDeploymentRollbackService.class);
-        Object result = new DeploymentsMcpTools(deploymentService, rollbackService)
+        Object result = new DeploymentsMcpTools(deploymentService, rollbackService,
+                mock(ai.nubase.deploy.service.AppWorkerService.class))
                 .deploymentRollback("4e581dbc-07f8-477c-8db1-41b89d65a36e");
 
         assertThat(result).isInstanceOf(Map.class);
         assertThat(asMap(result)).containsEntry("success", false);
         verifyNoInteractions(rollbackService);
+    }
+
+    @Test
+    void appWorkerDeleteRequiresServiceRole() {
+        AppDeploymentService deploymentService = mock(AppDeploymentService.class);
+        AppDeploymentRollbackService rollbackService = mock(AppDeploymentRollbackService.class);
+        ai.nubase.deploy.service.AppWorkerService appWorkerService =
+                mock(ai.nubase.deploy.service.AppWorkerService.class);
+        Object result = new DeploymentsMcpTools(deploymentService, rollbackService, appWorkerService)
+                .appWorkerDelete("my-app");
+
+        assertThat(result).isInstanceOf(Map.class);
+        assertThat(asMap(result)).containsEntry("success", false);
+        verifyNoInteractions(appWorkerService);
     }
 
     @SuppressWarnings("unchecked")

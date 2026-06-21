@@ -147,4 +147,33 @@ public final class AppDeploymentDtos {
             String errorMessage
     ) {
     }
+
+    /** One app worker the current project owns, derived from its deployment history. */
+    public record AppWorkerSummary(
+            String workerName,
+            String projectRef,
+            String version,
+            String previewHost,
+            String publicUrl,
+            String lastDeploymentStatus,
+            UUID lastDeploymentId,
+            Instant deployedAt,
+            Instant completedAt
+    ) {
+    }
+
+    /** An app worker summary enriched with live provider state. */
+    public record AppWorkerDetail(
+            AppWorkerSummary worker,
+            boolean existsOnProvider,
+            Object provider
+    ) {
+    }
+
+    public record AppWorkerDeleteResponse(
+            String workerName,
+            boolean deleted,
+            UUID auditDeploymentId
+    ) {
+    }
 }

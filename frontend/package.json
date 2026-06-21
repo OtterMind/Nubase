@@ -13,5 +13,13 @@
   "devDependencies": {
     "typescript": "^5.5.4",
     "prettier": "^3.3.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "dompurify": ">=3.4.9",
+      "glob@>=10.2.0 <10.5.0": "10.5.0",
+      "postcss@<8.5.10": "^8.5.10",
+      "vite@<6.4.2": "^6.4.2"
+    }
   }
 }

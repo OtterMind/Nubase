@@ -139,6 +139,74 @@ class CloudflareAppWorkerDeployerTest {
         }
     }
 
+    @Test
+    void getReturnsLiveScriptDetailsFromDispatchNamespace() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(200).setBody("""
+                    {"success":true,"result":{"id":"appabc","created_on":"2026-06-17T00:00:00Z"}}
+                    """));
+            server.start();
+            var deployer = new CloudflareAppWorkerDeployer(props(server), new ObjectMapper());
+
+            AppWorkerInfo info = deployer.get("AppABC");
+
+            assertThat(info.exists()).isTrue();
+            assertThat(info.workerName()).isEqualTo("appabc");
+            assertThat(info.details()).containsEntry("id", "appabc");
+
+            var request = server.takeRequest();
+            assertThat(request.getMethod()).isEqualTo("GET");
+            assertThat(request.getPath())
+                    .isEqualTo("/client/v4/accounts/acct/workers/dispatch/namespaces/ns/scripts/appabc");
+            assertThat(request.getHeader("Authorization")).isEqualTo("Bearer token");
+        }
+    }
+
+    @Test
+    void getReportsMissingWorkerWhenProviderReturns404() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(404).setBody(
+                    "{\"success\":false,\"errors\":[{\"code\":10007,\"message\":\"workers.api.error.script_not_found\"}]}"));
+            server.start();
+            var deployer = new CloudflareAppWorkerDeployer(props(server), new ObjectMapper());
+
+            AppWorkerInfo info = deployer.get("appabc");
+
+            assertThat(info.exists()).isFalse();
+            assertThat(info.details()).isEmpty();
+        }
+    }
+
+    @Test
+    void deleteRemovesScriptFromDispatchNamespace() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"success\":true}"));
+            server.start();
+            var deployer = new CloudflareAppWorkerDeployer(props(server), new ObjectMapper());
+
+            deployer.delete("appabc");
+
+            var request = server.takeRequest();
+            assertThat(request.getMethod()).isEqualTo("DELETE");
+            assertThat(request.getPath())
+                    .isEqualTo("/client/v4/accounts/acct/workers/dispatch/namespaces/ns/scripts/appabc?force=true");
+        }
+    }
+
+    @Test
+    void deleteIsIdempotentWhenWorkerAlreadyAbsent() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setResponseCode(404).setBody(
+                    "{\"success\":false,\"errors\":[{\"code\":10007,\"message\":\"script_not_found\"}]}"));
+            server.start();
+            var deployer = new CloudflareAppWorkerDeployer(props(server), new ObjectMapper());
+
+            deployer.delete("appabc");
+
+            assertThat(server.getRequestCount()).isEqualTo(1);
+        }
+    }
+
     private EdgeFunctionExecutorProperties props(MockWebServer server) {
         EdgeFunctionExecutorProperties props = new EdgeFunctionExecutorProperties();
         props.getCloudflare().setAccountId("acct");

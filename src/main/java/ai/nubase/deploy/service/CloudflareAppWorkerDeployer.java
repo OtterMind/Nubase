@@ -129,6 +129,48 @@ public class CloudflareAppWorkerDeployer implements AppWorkerDeployer {
         return new AssetUpload(completionJwt, manifestHash, files.size());
     }
 
+    @Override
+    public AppWorkerInfo get(String workerName) {
+        validateConfig();
+        String name = normalizeWorkerName(workerName);
+        try {
+            Map<String, Object> result = executeJson(new Request.Builder()
+                    .url(scriptUrl(name))
+                    .get()
+                    .header("Authorization", "Bearer " + cf().getApiToken())
+                    .build(), true);
+            if (result == null) {
+                return new AppWorkerInfo(name, false, Map.of());
+            }
+            return new AppWorkerInfo(name, true, result);
+        } catch (IOException e) {
+            throw new AppWorkerDeploymentException("Failed to read app worker " + name + ": " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void delete(String workerName) {
+        validateConfig();
+        String name = normalizeWorkerName(workerName);
+        Request request = new Request.Builder()
+                .url(scriptUrl(name) + "?force=true")
+                .delete()
+                .header("Authorization", "Bearer " + cf().getApiToken())
+                .build();
+        try (Response ignored = executeCloudflare(request, true)) {
+            // A null/closed response (404) means the script was already gone — idempotent success.
+        } catch (IOException e) {
+            throw new AppWorkerDeploymentException("Failed to delete app worker " + name + ": " + e.getMessage(), e);
+        }
+    }
+
+    private String scriptUrl(String name) {
+        return apiBase()
+                + "/accounts/" + cf().getAccountId()
+                + "/workers/dispatch/namespaces/" + cf().getDispatchNamespace()
+                + "/scripts/" + name;
+    }
+
     private void uploadWorker(AppWorkerDeploymentRequest request, String workerName, String assetCompletionJwt) throws IOException {
         Map<String, AppWorkerDeploymentRequest.AppWorkerFile> serverFiles = new LinkedHashMap<>();
         for (AppWorkerDeploymentRequest.AppWorkerFile file : request.serverFiles() == null ? List.<AppWorkerDeploymentRequest.AppWorkerFile>of() : request.serverFiles()) {
@@ -242,7 +284,12 @@ public class CloudflareAppWorkerDeployer implements AppWorkerDeployer {
     }
 
     private Map<String, Object> executeJson(Request request) throws IOException {
-        try (Response response = executeCloudflare(request)) {
+        return executeJson(request, false);
+    }
+
+    private Map<String, Object> executeJson(Request request, boolean allowNotFound) throws IOException {
+        try (Response response = executeCloudflare(request, allowNotFound)) {
+            if (response == null) return null;
             String body = response.body() == null ? "" : response.body().string();
             if (!StringUtils.hasText(body)) return Map.of();
             Map<String, Object> envelope = objectMapper.readValue(body, new TypeReference<>() {});
@@ -257,9 +304,21 @@ public class CloudflareAppWorkerDeployer implements AppWorkerDeployer {
     }
 
     private Response executeCloudflare(Request request) throws IOException {
+        return executeCloudflare(request, false);
+    }
+
+    /**
+     * Execute a Cloudflare request with retry on 429/5xx. When {@code allowNotFound} is true a
+     * 404 returns {@code null} (caller treats it as absent) instead of throwing.
+     */
+    private Response executeCloudflare(Request request, boolean allowNotFound) throws IOException {
         IOException last = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
             Response response = httpClient().newCall(request).execute();
+            if (allowNotFound && response.code() == 404) {
+                response.close();
+                return null;
+            }
             if (response.code() == 429 || response.code() >= 500) {
                 String body = response.body() == null ? "" : response.body().string();
                 response.close();

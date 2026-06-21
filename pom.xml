@@ -22,7 +22,7 @@
         <java.version>17</java.version>
         <jjwt.version>0.12.3</jjwt.version>
         <guava.version>33.0.0-jre</guava.version>
-        <hutool.version>5.8.20</hutool.version>
+        <hutool.version>5.8.21</hutool.version>
         <testcontainers.version>1.19.3</testcontainers.version>
         <aws.sdk.version>2.40.17</aws.sdk.version>
         <spring-ai.version>1.1.2</spring-ai.version>

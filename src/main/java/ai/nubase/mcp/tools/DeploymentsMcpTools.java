@@ -3,6 +3,7 @@ package ai.nubase.mcp.tools;
 import ai.nubase.common.context.MultiTenancyContext;
 import ai.nubase.deploy.service.AppDeploymentService;
 import ai.nubase.deploy.service.AppDeploymentRollbackService;
+import ai.nubase.deploy.service.AppWorkerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,7 @@ public class DeploymentsMcpTools {
 
     private final AppDeploymentService deploymentService;
     private final AppDeploymentRollbackService rollbackService;
+    private final AppWorkerService appWorkerService;
 
     @Tool(description = "List recent app deployments for the current project. Parameters: limit optional default 50. Read-only.")
     public Object deploymentsList(Integer limit) {
@@ -44,5 +46,32 @@ public class DeploymentsMcpTools {
         }
         if (id == null || id.isBlank()) return Map.of("success", false, "error", "id is required");
         return rollbackService.rollback(UUID.fromString(id));
+    }
+
+    @Tool(description = "List the app workers (Cloudflare Workers) this project has deployed, with their latest version, preview URL and deployment status. Scoped to the current project. Read-only.")
+    public Object appWorkersList() {
+        return appWorkerService.list();
+    }
+
+    @Tool(description = "Get one deployed app worker for this project, enriched with live provider state. Parameters: workerName required. Read-only.")
+    public Object appWorkerStatus(String workerName) {
+        if (workerName == null || workerName.isBlank()) {
+            return Map.of("success", false, "error", "workerName is required");
+        }
+        return appWorkerService.get(workerName);
+    }
+
+    @Tool(description = "Delete (undeploy) one app worker owned by this project. Parameters: workerName required. Write operation; requires service_role project context and only affects workers this project has deployed.")
+    public Object appWorkerDelete(String workerName) {
+        if (!MultiTenancyContext.isServiceRole()) {
+            return Map.of(
+                    "success", false,
+                    "error", "appWorkerDelete requires service_role project context"
+            );
+        }
+        if (workerName == null || workerName.isBlank()) {
+            return Map.of("success", false, "error", "workerName is required");
+        }
+        return appWorkerService.delete(workerName);
     }
 }

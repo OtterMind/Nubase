@@ -2,8 +2,11 @@ package ai.nubase.deploy.controller;
 
 import ai.nubase.auth.annotation.RequireServiceRole;
 import ai.nubase.deploy.dto.AppDeploymentDtos.CompleteDeploymentRequest;
+import ai.nubase.deploy.dto.AppDeploymentDtos.AppWorkerDeleteResponse;
 import ai.nubase.deploy.dto.AppDeploymentDtos.AppWorkerDeployMetadata;
 import ai.nubase.deploy.dto.AppDeploymentDtos.AppWorkerDeployResponse;
+import ai.nubase.deploy.dto.AppDeploymentDtos.AppWorkerDetail;
+import ai.nubase.deploy.dto.AppDeploymentDtos.AppWorkerSummary;
 import ai.nubase.deploy.dto.AppDeploymentDtos.CreateDeploymentRequest;
 import ai.nubase.deploy.dto.AppDeploymentDtos.DeploymentDetailResponse;
 import ai.nubase.deploy.dto.AppDeploymentDtos.DeploymentResponse;
@@ -13,9 +16,11 @@ import ai.nubase.deploy.dto.AppDeploymentDtos.RollbackDeploymentResponse;
 import ai.nubase.deploy.service.AppDeploymentRollbackService;
 import ai.nubase.deploy.service.AppDeploymentService;
 import ai.nubase.deploy.service.AppWorkerDeployService;
+import ai.nubase.deploy.service.AppWorkerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,6 +45,7 @@ public class AppDeploymentAdminController {
     private final AppDeploymentService deploymentService;
     private final AppDeploymentRollbackService rollbackService;
     private final AppWorkerDeployService appWorkerDeployService;
+    private final AppWorkerService appWorkerService;
     private final ObjectMapper objectMapper;
 
     @PostMapping("/deployments")
@@ -81,6 +87,21 @@ public class AppDeploymentAdminController {
     @PostMapping("/deployments/{id}/rollback")
     public ResponseEntity<RollbackDeploymentResponse> rollback(@PathVariable UUID id) {
         return ResponseEntity.ok(rollbackService.rollback(id));
+    }
+
+    @GetMapping("/app-workers")
+    public ResponseEntity<List<AppWorkerSummary>> listAppWorkers() {
+        return ResponseEntity.ok(appWorkerService.list());
+    }
+
+    @GetMapping("/app-workers/{workerName}")
+    public ResponseEntity<AppWorkerDetail> getAppWorker(@PathVariable String workerName) {
+        return ResponseEntity.ok(appWorkerService.get(workerName));
+    }
+
+    @DeleteMapping("/app-workers/{workerName}")
+    public ResponseEntity<AppWorkerDeleteResponse> deleteAppWorker(@PathVariable String workerName) {
+        return ResponseEntity.ok(appWorkerService.delete(workerName));
     }
 
     @PostMapping(value = "/app-workers/deploy", consumes = "multipart/form-data")
