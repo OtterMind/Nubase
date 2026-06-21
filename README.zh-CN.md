@@ -13,6 +13,14 @@
 [![Docker pulls](https://img.shields.io/docker/pulls/ottermind/nubase?logo=docker&label=docker%20pulls&color=2496ED)](https://hub.docker.com/r/ottermind/nubase)
 [![GitHub stars](https://img.shields.io/github/stars/OtterMind/Nubase?style=social)](https://github.com/OtterMind/Nubase)
 
+<p align="center">
+  <a href="https://github.com/OtterMind/Nubase">
+    <img src="https://cdn.chat2db-ai.com/front/release/Area.gif" alt="给 Nubase 点个 Star" width="720" />
+  </a>
+</p>
+
+<p align="center"><b>⭐ 如果 Nubase 对你有帮助，请给我们点个 Star —— 每一个 Star 都能让更多人发现这个项目，也是我们持续前进的动力。谢谢！</b></p>
+
 **让 AI 写出的代码变成真正上线的应用。** Nubase 是一个开源、AI 原生的后端**与部署层**，由编码 Agent 直接驱动 —— 生成的应用几分钟内即可上线。八大能力模块集成在一个可自托管的服务中：**数据库（Database）、认证（Auth）、存储（Storage）、静态资源（Assets）、函数（Functions）、AI 网关（AI Gateway）、记忆（Memory）和定时任务（cron）**。
 
 > Agent 可以建模数据（Database + Auth）、部署后端逻辑（**Functions**）、把生成的前端发布到公共 CDN（**Assets**）、编排周期性任务（**cron**）—— 全部通过 MCP 工具完成，无需单独的托管账号。在合理之处对齐 Supabase 体验（Postgres、REST、JWT、RLS、对象存储、Studio 控制台），并额外提供一流的 **Memory** 能力和专为 AI 编码 Agent 打造的 **MCP** 接口。
@@ -218,6 +226,16 @@ curl -X POST "http://localhost:9999/rest/v1/todos" \
 ## 状态与路线图
 
 Nubase 仍处于早期阶段，但全部八大模块（数据库、认证、存储、静态资源、函数、AI 网关、记忆、定时任务）以及 Studio 和 MCP 桥都已就位。尚未实现：**实时（Realtime）**，以及备份/PITR、高可用、企业级 SSO/SCIM 等运维增强。在把服务暴露到公网之前，请先审查管理类接口。
+
+## ⭐ Star 用户
+
+衷心感谢每一位为 Nubase 点亮 Star 的朋友！🙏 你们都在这里：
+
+[![Stargazers of OtterMind/Nubase](https://reporoster.com/stars/OtterMind/Nubase)](https://github.com/OtterMind/Nubase/stargazers)
+
+### Star 趋势
+
+[![Star History Chart](https://api.star-history.com/svg?repos=OtterMind/Nubase&type=Date)](https://star-history.com/#OtterMind/Nubase&Date)
 
 ## 贡献
 

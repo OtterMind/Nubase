@@ -13,6 +13,14 @@ Official website: [https://nubase.ai](https://nubase.ai)
 [![Docker pulls](https://img.shields.io/docker/pulls/ottermind/nubase?logo=docker&label=docker%20pulls&color=2496ED)](https://hub.docker.com/r/ottermind/nubase)
 [![GitHub stars](https://img.shields.io/github/stars/OtterMind/Nubase?style=social)](https://github.com/OtterMind/Nubase)
 
+<p align="center">
+  <a href="https://github.com/OtterMind/Nubase">
+    <img src="https://cdn.chat2db-ai.com/front/release/Area.gif" alt="Give Nubase a star on GitHub" width="720" />
+  </a>
+</p>
+
+<p align="center"><b>⭐ If Nubase is useful to you, please give us a star — every star helps more people discover the project and keeps us motivated. Thank you!</b></p>
+
 **Turn AI-written code into real apps.** Nubase is an open-source, AI-native backend **and deploy layer** that a coding agent drives directly — so a generated app goes live in minutes. Eight capability modules in one self-hostable service: **Database, Auth, Storage, Assets, Functions, AI Gateway, Memory, and cron**.
 
 > An agent can model the data (Database + Auth), deploy backend logic (**Functions**), publish the generated frontend to a public CDN (**Assets**), and schedule recurring work (**cron**) — all through MCP tools, with no separate hosting account. Supabase-style where it makes sense (Postgres, REST, JWTs, RLS, object storage, a Studio dashboard), plus first-class **Memory** and an **MCP** surface built for AI coding agents.
@@ -216,6 +224,16 @@ curl -X POST "http://localhost:9999/rest/v1/todos" \
 ## Status & roadmap
 
 Nubase is early-stage but all eight modules (Database, Auth, Storage, Assets, Functions, AI Gateway, Memory, cron) plus Studio and the MCP bridge are in place. Not yet implemented: **Realtime** and operational extras like backups/PITR, HA, and enterprise SSO/SCIM. Review the admin/management endpoints before exposing a server to the public internet.
+
+## ⭐ Stargazers
+
+A huge thank-you to everyone who has starred Nubase! 🙏 You're all listed here:
+
+[![Stargazers of OtterMind/Nubase](https://reporoster.com/stars/OtterMind/Nubase)](https://github.com/OtterMind/Nubase/stargazers)
+
+### Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=OtterMind/Nubase&type=Date)](https://star-history.com/#OtterMind/Nubase&Date)
 
 ## Contributing
 
