@@ -254,11 +254,59 @@ public class DatabaseMcpTools {
     @Tool(description = "Preview SQL risk and statement count without executing it. Use before executeSql for schema or data changes.")
     public Object executeSqlDryRun(String sqlQuery) {
         SqlRisk risk = sqlRiskClassifier.classify(sqlQuery);
+        int statementCount = sqlRiskClassifier.countStatements(sqlQuery);
+        if (risk == SqlRisk.DANGEROUS) {
+            return Map.of(
+                    "success", true,
+                    "risk", risk.name(),
+                    "statementCount", statementCount,
+                    "executable", false,
+                    "blocked", true,
+                    "error", "Dangerous SQL is blocked and was not transaction-validated"
+            );
+        }
+
+        if (!MultiTenancyContext.isServiceRole()) {
+            return Map.of(
+                    "success", false,
+                    "risk", risk.name(),
+                    "statementCount", statementCount,
+                    "executable", false,
+                    "error", "Cannot dry-run SQL: service_role MCP apikey is required"
+            );
+        }
+
+        DatabaseConfig dbConfig = MultiTenancyContext.getDatabaseConfig();
+        if (dbConfig == null || !DatabaseInitStatus.INITIALIZED.name().equals(dbConfig.getInitStatus())) {
+            return Map.of(
+                    "success", false,
+                    "risk", risk.name(),
+                    "statementCount", statementCount,
+                    "executable", false,
+                    "error", "Database context not found, please ensure the database is initialized"
+            );
+        }
+
+        ExecuteSqlRequest request = new ExecuteSqlRequest();
+        request.setQuery(sqlQuery);
+        SqlExecutionResponse response = sqlExecutionService.dryRunSql(request);
+        if (!response.isSuccess()) {
+            return Map.of(
+                    "success", false,
+                    "risk", risk.name(),
+                    "statementCount", statementCount,
+                    "executable", false,
+                    "error", response.getError() != null ? response.getError() : "SQL dry-run failed",
+                    "executionTimeMs", response.getExecutionTimeMs() != null ? response.getExecutionTimeMs() : 0
+            );
+        }
         return Map.of(
                 "success", true,
                 "risk", risk.name(),
-                "statementCount", sqlRiskClassifier.countStatements(sqlQuery),
-                "executable", risk != SqlRisk.DANGEROUS
+                "statementCount", statementCount,
+                "executable", true,
+                "results", response.getResults() != null ? response.getResults() : List.of(),
+                "executionTimeMs", response.getExecutionTimeMs() != null ? response.getExecutionTimeMs() : 0
         );
     }
 
