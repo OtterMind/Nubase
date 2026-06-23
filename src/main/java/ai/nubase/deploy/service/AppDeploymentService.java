@@ -36,8 +36,13 @@ public class AppDeploymentService {
 
     @Transactional("metadataTransactionManager")
     public DeploymentResponse create(CreateDeploymentRequest request) {
+        return createForProjectRef(projectRef(), request);
+    }
+
+    @Transactional("metadataTransactionManager")
+    public DeploymentResponse createForProjectRef(String projectRef, CreateDeploymentRequest request) {
         AppDeployment deployment = AppDeployment.builder()
-                .projectRef(projectRef())
+                .projectRef(required(projectRef, "projectRef"))
                 .appName(StringUtils.hasText(request.appName()) ? request.appName().trim() : "app")
                 .status(AppDeployment.STATUS_RUNNING)
                 .manifestSummary(writeJson(request.manifestSummary()))
@@ -49,7 +54,16 @@ public class AppDeploymentService {
 
     @Transactional("metadataTransactionManager")
     public DeploymentStepResponse recordStep(UUID deploymentId, RecordDeploymentStepRequest request) {
-        AppDeployment deployment = findDeployment(deploymentId);
+        return recordStepForProjectRef(projectRef(), deploymentId, request);
+    }
+
+    @Transactional("metadataTransactionManager")
+    public DeploymentStepResponse recordStepForProjectRef(
+            String projectRef,
+            UUID deploymentId,
+            RecordDeploymentStepRequest request
+    ) {
+        AppDeployment deployment = findDeploymentForProjectRef(projectRef, deploymentId);
         AppDeploymentStep step = AppDeploymentStep.builder()
                 .deployment(deployment)
                 .stepOrder(request.stepOrder())
@@ -66,7 +80,16 @@ public class AppDeploymentService {
 
     @Transactional("metadataTransactionManager")
     public DeploymentResponse complete(UUID deploymentId, CompleteDeploymentRequest request) {
-        AppDeployment deployment = findDeployment(deploymentId);
+        return completeForProjectRef(projectRef(), deploymentId, request);
+    }
+
+    @Transactional("metadataTransactionManager")
+    public DeploymentResponse completeForProjectRef(
+            String projectRef,
+            UUID deploymentId,
+            CompleteDeploymentRequest request
+    ) {
+        AppDeployment deployment = findDeploymentForProjectRef(projectRef, deploymentId);
         deployment.setStatus(normalizeDeploymentStatus(request.status()));
         deployment.setPublicUrl(blankToNull(request.publicUrl()));
         deployment.setErrorMessage(blankToNull(request.errorMessage()));
@@ -101,7 +124,11 @@ public class AppDeploymentService {
     }
 
     private AppDeployment findDeployment(UUID id) {
-        return deploymentRepository.findByProjectRefAndId(projectRef(), id)
+        return findDeploymentForProjectRef(projectRef(), id);
+    }
+
+    private AppDeployment findDeploymentForProjectRef(String projectRef, UUID id) {
+        return deploymentRepository.findByProjectRefAndId(required(projectRef, "projectRef"), id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Deployment not found"));
     }
 

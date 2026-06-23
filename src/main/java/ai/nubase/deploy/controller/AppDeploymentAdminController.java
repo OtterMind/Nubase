@@ -38,7 +38,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/deployments/admin/v1")
-@RequireServiceRole
 @RequiredArgsConstructor
 public class AppDeploymentAdminController {
 
@@ -48,26 +47,31 @@ public class AppDeploymentAdminController {
     private final AppWorkerService appWorkerService;
     private final ObjectMapper objectMapper;
 
+    @RequireServiceRole
     @PostMapping("/deployments")
     public ResponseEntity<DeploymentResponse> create(@RequestBody CreateDeploymentRequest request) {
         return ResponseEntity.ok(deploymentService.create(request));
     }
 
+    @RequireServiceRole
     @GetMapping("/deployments")
     public ResponseEntity<List<DeploymentResponse>> list(@RequestParam(defaultValue = "50") int limit) {
         return ResponseEntity.ok(deploymentService.list(limit));
     }
 
+    @RequireServiceRole
     @GetMapping("/deployments/{id}")
     public ResponseEntity<DeploymentDetailResponse> get(@PathVariable UUID id) {
         return ResponseEntity.ok(deploymentService.get(id));
     }
 
+    @RequireServiceRole
     @GetMapping("/deployments/{id}/logs")
     public ResponseEntity<List<DeploymentStepResponse>> logs(@PathVariable UUID id) {
         return ResponseEntity.ok(deploymentService.logs(id));
     }
 
+    @RequireServiceRole
     @PostMapping("/deployments/{id}/steps")
     public ResponseEntity<DeploymentStepResponse> recordStep(
             @PathVariable UUID id,
@@ -76,6 +80,7 @@ public class AppDeploymentAdminController {
         return ResponseEntity.ok(deploymentService.recordStep(id, request));
     }
 
+    @RequireServiceRole
     @PostMapping("/deployments/{id}/complete")
     public ResponseEntity<DeploymentResponse> complete(
             @PathVariable UUID id,
@@ -84,21 +89,25 @@ public class AppDeploymentAdminController {
         return ResponseEntity.ok(deploymentService.complete(id, request));
     }
 
+    @RequireServiceRole
     @PostMapping("/deployments/{id}/rollback")
     public ResponseEntity<RollbackDeploymentResponse> rollback(@PathVariable UUID id) {
         return ResponseEntity.ok(rollbackService.rollback(id));
     }
 
+    @RequireServiceRole
     @GetMapping("/app-workers")
     public ResponseEntity<List<AppWorkerSummary>> listAppWorkers() {
         return ResponseEntity.ok(appWorkerService.list());
     }
 
+    @RequireServiceRole
     @GetMapping("/app-workers/{workerName}")
     public ResponseEntity<AppWorkerDetail> getAppWorker(@PathVariable String workerName) {
         return ResponseEntity.ok(appWorkerService.get(workerName));
     }
 
+    @RequireServiceRole
     @DeleteMapping("/app-workers/{workerName}")
     public ResponseEntity<AppWorkerDeleteResponse> deleteAppWorker(@PathVariable String workerName) {
         return ResponseEntity.ok(appWorkerService.delete(workerName));

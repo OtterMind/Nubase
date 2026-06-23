@@ -96,7 +96,8 @@ public class AdminInitAuthFilter extends OncePerRequestFilter {
     private static final java.util.List<String> PLATFORM_JWT_ACCEPTED_PATHS = java.util.List.of(
             "/auth/v1/admin/projects",   // list + per-project actions (provision, members)
             "/auth/v1/admin/init/",      // create database config / one-shot init via platform JWT
-            "/auth/v1/admin/platform/"   // platform user management (role check enforced in controller)
+            "/auth/v1/admin/platform/",  // platform user management (role check enforced in controller)
+            "/deployments/admin/v1/app-workers/deploy" // app-worker-only deploy can run before a tenant project exists
     );
 
     /**
@@ -107,7 +108,8 @@ public class AdminInitAuthFilter extends OncePerRequestFilter {
     private static final java.util.List<String> PLATFORM_ADMIN_PATHS = java.util.List.of(
             "/auth/v1/admin/init/",
             "/auth/v1/admin/projects",
-            "/auth/v1/admin/platform/"
+            "/auth/v1/admin/platform/",
+            "/deployments/admin/v1/app-workers/deploy"
     );
 
     private boolean isPlatformAdminPath(String requestPath) {

@@ -42,7 +42,7 @@ public class AppWorkerDeployService {
                 ? metadata.previewHost().trim()
                 : workerName + ".ottermind.app";
 
-        var deployment = deploymentService.create(new CreateDeploymentRequest(
+        var deployment = deploymentService.createForProjectRef(appCode, new CreateDeploymentRequest(
                 appCode,
                 manifestSummary(metadata, serverFiles, assetFiles),
                 null,
@@ -50,7 +50,7 @@ public class AppWorkerDeployService {
         ));
         try {
             List<AppWorkerDeploymentRequest.AppWorkerFile> serverBundle = files(serverFiles);
-            deploymentService.recordStep(deployment.id(), new RecordDeploymentStepRequest(
+            deploymentService.recordStepForProjectRef(appCode, deployment.id(), new RecordDeploymentStepRequest(
                     1,
                     "server_bundle_received",
                     metadata.mainModule(),
@@ -60,7 +60,7 @@ public class AppWorkerDeployService {
             ));
 
             List<AppWorkerDeploymentRequest.AppWorkerFile> assets = files(assetFiles);
-            deploymentService.recordStep(deployment.id(), new RecordDeploymentStepRequest(
+            deploymentService.recordStepForProjectRef(appCode, deployment.id(), new RecordDeploymentStepRequest(
                     2,
                     "assets_received",
                     metadata.clientDistPath(),
@@ -84,7 +84,7 @@ public class AppWorkerDeployService {
                     assets
             ));
 
-            deploymentService.recordStep(deployment.id(), new RecordDeploymentStepRequest(
+            deploymentService.recordStepForProjectRef(appCode, deployment.id(), new RecordDeploymentStepRequest(
                     3,
                     "cloudflare_app_worker_deploy",
                     result.providerDeploymentId(),
@@ -92,7 +92,7 @@ public class AppWorkerDeployService {
                     deploymentResult(result),
                     null
             ));
-            deploymentService.complete(deployment.id(), new CompleteDeploymentRequest(
+            deploymentService.completeForProjectRef(appCode, deployment.id(), new CompleteDeploymentRequest(
                     AppDeployment.STATUS_SUCCEEDED,
                     result.previewUrl(),
                     null
@@ -110,7 +110,7 @@ public class AppWorkerDeployService {
             );
         } catch (Exception e) {
             String message = e.getMessage() == null ? e.toString() : e.getMessage();
-            deploymentService.recordStep(deployment.id(), new RecordDeploymentStepRequest(
+            deploymentService.recordStepForProjectRef(appCode, deployment.id(), new RecordDeploymentStepRequest(
                     99,
                     "cloudflare_app_worker_deploy",
                     workerName,
@@ -118,7 +118,7 @@ public class AppWorkerDeployService {
                     Map.of(),
                     message
             ));
-            deploymentService.complete(deployment.id(), new CompleteDeploymentRequest(
+            deploymentService.completeForProjectRef(appCode, deployment.id(), new CompleteDeploymentRequest(
                     AppDeployment.STATUS_FAILED,
                     null,
                     message
@@ -185,6 +185,11 @@ public class AppWorkerDeployService {
         summary.put("previewHost", metadata.previewHost());
         summary.put("serverFiles", serverFiles == null ? 0 : serverFiles.size());
         summary.put("assetFiles", assetFiles == null ? 0 : assetFiles.size());
+        Map<String, String> bindings = plainBindings(metadata);
+        String runtimeMode = bindings.get("NUBASE_RUNTIME_MODE");
+        putIfPresent(summary, "runtimeMode", runtimeMode);
+        putIfPresent(summary, "upstreamEndpoint", bindings.get("NUBASE_UPSTREAM_URL"));
+        summary.put("proxyEnabled", "same-origin-proxy".equals(runtimeMode));
         return summary;
     }
 

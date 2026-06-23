@@ -72,6 +72,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
     private static final Logger MCP_LOG = LoggerFactory.getLogger("McpLogger");
+    private static final String PROJECT_REF_HEADER = "x-nubase-project-ref";
     private final DatabaseConfigRepository databaseConfigRepository;
     private final RoutingDataSource routingDataSource;
     private final JwtSecretService jwtSecretService;
@@ -102,6 +103,7 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
             "/auth/v1/admin/projects",    // Cross-tenant project list, authenticated by AdminInitAuthFilter
             "/auth/v1/admin/platform/",   // Platform user management, authenticated by AdminInitAuthFilter
             "/auth/v1/platform/",         // Platform-level developer accounts (Studio login), separate JWT auth
+            "/deployments/admin/v1/app-workers/deploy", // App-worker-only deploy can be platform-admin authenticated without tenant keys.
             "/storage/v1/health"    // Storage health check, no authentication required
     );
 
@@ -257,6 +259,8 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
             throw new IllegalArgumentException("Unable to determine app_code");
         }
 
+        validateProjectRefHeader(request, appCode);
+
         // 2. Load tenant configuration (app_code -> database_key + schema_name)
         DatabaseConfig databaseConfig = databaseConfigRepository.findByAppCode(appCode);
         if (databaseConfig == null || !databaseConfig.isAvailable()) {
@@ -331,6 +335,16 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
         MultiTenancyContext.setContext(contextData);
 
         log.debug("MultiTenancyContext set: app_code={}, database_key={}, schema={}, service_role={}", appCode, databaseKey, schemaName, isServiceRole);
+    }
+
+    private void validateProjectRefHeader(HttpServletRequest request, String appCode) {
+        String requestedProjectRef = StringUtils.trimToNull(request.getHeader(PROJECT_REF_HEADER));
+        if (requestedProjectRef == null) {
+            return;
+        }
+        if (!requestedProjectRef.equals(appCode)) {
+            throw new IllegalArgumentException(PROJECT_REF_HEADER + " does not match apikey ref");
+        }
     }
 
     /**

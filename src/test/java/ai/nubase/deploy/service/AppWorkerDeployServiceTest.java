@@ -54,7 +54,7 @@ class AppWorkerDeployServiceTest {
     @Test
     void deploysAppWorkerAndRecordsDeploymentSteps() {
         UUID deploymentId = UUID.randomUUID();
-        when(deploymentService.create(any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
+        when(deploymentService.createForProjectRef(eq("appabc"), any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
                 deploymentId,
                 "appabc",
                 "appabc",
@@ -88,7 +88,10 @@ class AppWorkerDeployServiceTest {
         verify(deployer).deploy(request.capture());
         assertThat(request.getValue().appCode()).isEqualTo("appabc");
         assertThat(request.getValue().mainModule()).isEqualTo("server/index.js");
-        assertThat(request.getValue().plainTextBindings()).containsEntry("VITE_NUBASE_URL", "https://appabc.nubase.example");
+        assertThat(request.getValue().plainTextBindings()).containsEntry("NUBASE_RUNTIME_MODE", "same-origin-proxy");
+        assertThat(request.getValue().plainTextBindings()).containsEntry("NUBASE_PROJECT_REF", "appabc");
+        assertThat(request.getValue().plainTextBindings()).containsEntry("NUBASE_UPSTREAM_URL", "https://rebel-earl-transport-floyd.trycloudflare.com");
+        assertThat(request.getValue().plainTextBindings()).containsEntry("VITE_NUBASE_PUBLISHABLE_KEY", "public-authenticated-token");
         assertThat(request.getValue().secretTextBindings()).containsEntry("NUBASE_SERVICE_ROLE_KEY", "server-secret");
         assertThat(request.getValue().serverFiles()).hasSize(1);
         assertThat(request.getValue().assetFiles()).hasSize(1);
@@ -96,16 +99,72 @@ class AppWorkerDeployServiceTest {
         assertThat(request.getValue().assetFiles().get(0).contentType()).isEqualTo("text/html");
 
         ArgumentCaptor<RecordDeploymentStepRequest> steps = ArgumentCaptor.forClass(RecordDeploymentStepRequest.class);
-        verify(deploymentService, org.mockito.Mockito.times(3)).recordStep(eq(deploymentId), steps.capture());
+        verify(deploymentService, org.mockito.Mockito.times(3)).recordStepForProjectRef(eq("appabc"), eq(deploymentId), steps.capture());
         assertThat(steps.getAllValues()).extracting(RecordDeploymentStepRequest::stepName)
                 .containsExactly("server_bundle_received", "assets_received", "cloudflare_app_worker_deploy");
-        verify(deploymentService).complete(eq(deploymentId), any(CompleteDeploymentRequest.class));
+        ArgumentCaptor<CreateDeploymentRequest> createRequest = ArgumentCaptor.forClass(CreateDeploymentRequest.class);
+        verify(deploymentService).createForProjectRef(eq("appabc"), createRequest.capture());
+        Map<String, Object> manifestSummary = createRequest.getValue().manifestSummary();
+        assertThat(manifestSummary).containsEntry("runtimeMode", "same-origin-proxy");
+        assertThat(manifestSummary).containsEntry("upstreamEndpoint", "https://rebel-earl-transport-floyd.trycloudflare.com");
+        assertThat(manifestSummary).containsEntry("proxyEnabled", true);
+        verify(deploymentService).completeForProjectRef(eq("appabc"), eq(deploymentId), any(CompleteDeploymentRequest.class));
+    }
+
+    @Test
+    void deploysAppWorkerOnlyWithoutTenantContextOrNubaseBindings() {
+        MultiTenancyContext.clear();
+        UUID deploymentId = UUID.randomUUID();
+        when(deploymentService.createForProjectRef(eq("appfrontend"), any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
+                deploymentId,
+                "appfrontend",
+                "appfrontend",
+                AppDeployment.STATUS_RUNNING,
+                null,
+                Map.of(),
+                null,
+                null,
+                "v1",
+                Instant.now(),
+                Instant.now(),
+                null
+        ));
+        when(deployer.deploy(any(AppWorkerDeploymentRequest.class))).thenReturn(new AppWorkerDeploymentResult(
+                "cloudflare",
+                "appfrontend",
+                "https://appfrontend.ottermind.app",
+                "deployed",
+                "asset-hash",
+                1,
+                Instant.parse("2026-06-17T00:00:00Z")
+        ));
+
+        var response = service.deploy(frontendOnlyMetadata(), List.of(serverFile()), List.of(assetFile()));
+
+        assertThat(response.status()).isEqualTo("deployed");
+        ArgumentCaptor<AppWorkerDeploymentRequest> request = ArgumentCaptor.forClass(AppWorkerDeploymentRequest.class);
+        verify(deployer).deploy(request.capture());
+        assertThat(request.getValue().appCode()).isEqualTo("appfrontend");
+        assertThat(request.getValue().plainTextBindings()).doesNotContainKeys(
+                "NUBASE_RUNTIME_MODE",
+                "NUBASE_PROJECT_REF",
+                "NUBASE_UPSTREAM_URL",
+                "NUBASE_PUBLISHABLE_KEY",
+                "VITE_NUBASE_PUBLISHABLE_KEY"
+        );
+        assertThat(request.getValue().secretTextBindings()).isEmpty();
+
+        ArgumentCaptor<CreateDeploymentRequest> createRequest = ArgumentCaptor.forClass(CreateDeploymentRequest.class);
+        verify(deploymentService).createForProjectRef(eq("appfrontend"), createRequest.capture());
+        assertThat(createRequest.getValue().appName()).isEqualTo("appfrontend");
+        assertThat(createRequest.getValue().manifestSummary()).containsEntry("proxyEnabled", false);
+        assertThat(createRequest.getValue().manifestSummary()).doesNotContainKeys("runtimeMode", "upstreamEndpoint");
     }
 
     @Test
     void recordsFailedDeploymentWhenCloudflareDeployFails() {
         UUID deploymentId = UUID.randomUUID();
-        when(deploymentService.create(any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
+        when(deploymentService.createForProjectRef(eq("appabc"), any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
                 deploymentId,
                 "appabc",
                 "appabc",
@@ -129,10 +188,10 @@ class AppWorkerDeployServiceTest {
         assertThat(response.errorMessage()).isEqualTo("Cloudflare 500");
 
         ArgumentCaptor<RecordDeploymentStepRequest> steps = ArgumentCaptor.forClass(RecordDeploymentStepRequest.class);
-        verify(deploymentService, org.mockito.Mockito.times(3)).recordStep(eq(deploymentId), steps.capture());
+        verify(deploymentService, org.mockito.Mockito.times(3)).recordStepForProjectRef(eq("appabc"), eq(deploymentId), steps.capture());
         assertThat(steps.getAllValues().get(2).stepName()).isEqualTo("cloudflare_app_worker_deploy");
         assertThat(steps.getAllValues().get(2).status()).isEqualTo(AppDeploymentStep.STATUS_FAILED);
-        verify(deploymentService).complete(eq(deploymentId), any(CompleteDeploymentRequest.class));
+        verify(deploymentService).completeForProjectRef(eq("appabc"), eq(deploymentId), any(CompleteDeploymentRequest.class));
     }
 
     @Test
@@ -157,13 +216,13 @@ class AppWorkerDeployServiceTest {
                 .hasMessageContaining("workerName must equal the project appCode");
 
         verify(deployer, org.mockito.Mockito.never()).deploy(any());
-        verify(deploymentService, org.mockito.Mockito.never()).create(any());
+        verify(deploymentService, org.mockito.Mockito.never()).createForProjectRef(any(), any());
     }
 
     @Test
     void allowsWorkerNameNamespacedUnderAppCode() {
         UUID deploymentId = UUID.randomUUID();
-        when(deploymentService.create(any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
+        when(deploymentService.createForProjectRef(eq("appabc"), any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
                 deploymentId, "appabc", "appabc", AppDeployment.STATUS_RUNNING, null, Map.of(),
                 null, null, "v1", Instant.now(), Instant.now(), null
         ));
@@ -195,9 +254,31 @@ class AppWorkerDeployServiceTest {
                 "appabc.ottermind.app",
                 "2026-06-17",
                 List.of("nodejs_compat"),
-                Map.of("NUBASE_URL", "https://appabc.nubase.example"),
-                Map.of("VITE_NUBASE_URL", "https://appabc.nubase.example"),
+                Map.of("NUBASE_RUNTIME_MODE", "same-origin-proxy"),
+                Map.of(
+                        "NUBASE_PROJECT_REF", "appabc",
+                        "NUBASE_UPSTREAM_URL", "https://rebel-earl-transport-floyd.trycloudflare.com",
+                        "NUBASE_PUBLISHABLE_KEY", "public-authenticated-token",
+                        "VITE_NUBASE_PUBLISHABLE_KEY", "public-authenticated-token"
+                ),
                 Map.of("NUBASE_SERVICE_ROLE_KEY", "server-secret")
+        );
+    }
+
+    private AppWorkerDeployMetadata frontendOnlyMetadata() {
+        return new AppWorkerDeployMetadata(
+                "appfrontend",
+                "v1",
+                "appfrontend",
+                "server/index.js",
+                "server/index.js",
+                "dist/client",
+                "appfrontend.ottermind.app",
+                "2026-06-17",
+                List.of("nodejs_compat"),
+                null,
+                Map.of(),
+                Map.of()
         );
     }
 
