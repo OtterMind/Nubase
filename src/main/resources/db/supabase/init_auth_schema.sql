@@ -80,13 +80,29 @@ CREATE TRIGGER update_users_updated_at
     FOR EACH ROW
 EXECUTE FUNCTION auth.update_updated_at_column();
 
--- Get JWT token user id function
+-- Get JWT claims helper functions
+CREATE OR REPLACE FUNCTION auth.jwt()
+    RETURNS jsonb AS $$
+    SELECT COALESCE(
+        NULLIF(current_setting('request.jwt.claims', true), '')::jsonb,
+        '{}'::jsonb
+    );
+$$ LANGUAGE sql STABLE;
+
 CREATE OR REPLACE FUNCTION auth.uid()
     RETURNS uuid AS $$
-BEGIN
-    RETURN CAST(NULLIF(current_setting('request.jwt.claims', true), '') AS json)->>'sub';
-END;
-$$ LANGUAGE plpgsql STABLE;
+    SELECT NULLIF(auth.jwt() ->> 'sub', '')::uuid;
+$$ LANGUAGE sql STABLE;
+
+-- Returns the database/JWT role claim (for example anon, authenticated, service_role).
+-- Application roles such as admin/manager should be modeled in app tables or app metadata.
+CREATE OR REPLACE FUNCTION auth.role()
+    RETURNS text AS $$
+    SELECT COALESCE(
+        NULLIF(current_setting('request.jwt.claim.role', true), ''),
+        NULLIF(auth.jwt() ->> 'role', '')
+    );
+$$ LANGUAGE sql STABLE;
 
 -- Add comments
 COMMENT ON TABLE auth.users IS 'Auth users table';
