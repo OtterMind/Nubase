@@ -236,6 +236,24 @@ public class AdminController {
     }
 
     /**
+     * POST /auth/v1/admin/sql/dry-run - Validate SQL in a rolled-back transaction.
+     * <p>
+     * This endpoint is used by trusted control-plane callers before they execute
+     * schema or RLS migrations. It uses the same tenant context and service-role
+     * authorization as SQL execution, but never persists DDL/DML changes.
+     */
+    @RequireServiceRole
+    @PostMapping("/admin/sql/dry-run")
+    public ResponseEntity<SqlExecutionResponse> dryRunSql(@Valid @RequestBody ExecuteSqlRequest request) {
+        SqlExecutionResponse response = sqlExecutionService.dryRunSql(request);
+        if (response.isSuccess()) {
+            return ResponseEntity.ok(response);
+        } else {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
+    }
+
+    /**
      * POST /auth/v1/admin/init/schema - Initialize a new tenant schema
      * <p>
      * WARNING: This is a powerful operation that creates database schemas.
