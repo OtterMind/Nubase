@@ -155,7 +155,7 @@ class AdminControllerIT {
         long total = databaseConfigRepository.findAllEnabled().size();
         mvc.perform(get("/auth/v1/admin/projects").header("apikey", adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value((int) total));
+                .andExpect(jsonPath("$.total").value((int) total));
     }
 
     @Test
@@ -163,7 +163,7 @@ class AdminControllerIT {
     void regularUserSeesOnlyOwn() throws Exception {
         mvc.perform(get("/auth/v1/admin/projects").header("apikey", regularToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.projects.length()").value(0));
     }
 
     // ==================== /admin/projects/{ref}/members ====================
@@ -185,7 +185,7 @@ class AdminControllerIT {
         // Visible to regular user
         mvc.perform(get("/auth/v1/admin/projects").header("apikey", regularToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.ref=='" + ref + "')].ref").exists());
+                .andExpect(jsonPath("$.projects[?(@.ref=='" + ref + "')].ref").exists());
 
         // Remove
         mvc.perform(delete("/auth/v1/admin/projects/" + ref + "/members/" + regular.getId())
@@ -195,7 +195,7 @@ class AdminControllerIT {
         // Invisible again
         mvc.perform(get("/auth/v1/admin/projects").header("apikey", regularToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.projects.length()").value(0));
     }
 
     @Test
@@ -312,7 +312,7 @@ class AdminControllerIT {
         // Regular user can list (sees their own = empty), but cannot delete admin's snippet
         mvc.perform(get("/auth/v1/admin/projects/" + ref + "/snippets").header("apikey", regularToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(0));
+                .andExpect(jsonPath("$.projects.length()").value(0));
 
         mvc.perform(delete("/auth/v1/admin/projects/" + ref + "/snippets/" + sid)
                         .header("apikey", regularToken))
@@ -350,7 +350,7 @@ class AdminControllerIT {
         // Drops from /admin/projects
         mvc.perform(get("/auth/v1/admin/projects").header("apikey", adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.ref=='" + ref + "')]").isEmpty());
+                .andExpect(jsonPath("$.projects[?(@.ref=='" + ref + "')]").isEmpty());
 
         // Resume + restore name
         mvc.perform(patch("/auth/v1/admin/projects/" + ref)

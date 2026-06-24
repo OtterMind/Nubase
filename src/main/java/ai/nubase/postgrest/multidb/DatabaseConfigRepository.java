@@ -503,34 +503,51 @@ public class DatabaseConfigRepository {
     }
 
     /**
-     * Find enabled configs owned by a given platform user (joined via platform_user_projects).
-     * Sensitive fields are not decrypted here — the consumer only needs apikey / status / metadata.
+     * One paginated query backing {@code GET /auth/v1/admin/projects}.
+     * <p>
+     * Visibility is folded into a single predicate: a super-admin (or the metadata
+     * service-role key) sees every enabled project; a regular user sees only projects
+     * they are a member of via {@code platform_user_projects} (the {@code EXISTS} check, which
+     * also keeps each project to a single row regardless of how many members it has).
+     *
+     * @param isSuperAdmin true to bypass the per-user membership filter
+     * @param userId       the caller's platform user id
+     * @param limit        page size
+     * @param offset       rows to skip
      */
-    public List<DatabaseConfig> findEnabledByUserId(java.util.UUID userId) {
-        log.debug("Loading enabled database configurations for user_id={}", userId);
-
+    public List<ProjectListItem> findVisibleProjects(boolean isSuperAdmin, java.util.UUID userId,
+                                                     int limit, int offset) {
         String sql = """
                 SELECT
-                    c.db_key, c.db_name, c.description,
-                    c.jdbc_url, c.db_user, c.db_password_encrypted,
-                    c.db_schemas, c.db_anon_role, c.db_max_rows, c.db_extra_search_path,
-                    c.jwt_secret_encrypted, c.jwt_secret_is_base64, c.jwt_audience, c.jwt_role_claim_key,
-                    c.pool_size, c.pool_timeout_ms, c.pool_max_lifetime_ms,
-                    c.pool_connection_timeout_ms, c.pool_idle_timeout_ms, c.pool_minimum_idle,
-                    c.enabled, c.created_at, c.updated_at, c.created_by, c.updated_by,
-                    c.last_health_check, c.health_status, c.health_message,
-                    c.app_code, c.app_name, c.schema_name,
-                    c.jwt_secret, c.service_role_token, c.oauth_config, c.auth_config, c.authenticated_token,
-                    c.init_status, c.init_message, c.init_started_at, c.init_completed_at
+                    c.db_key, c.app_code, c.app_name, c.db_name, c.description,
+                    c.schema_name, c.init_status, c.health_status, c.enabled,
+                    c.created_at, c.updated_at, c.service_role_token
                 FROM public.database_configs c
-                JOIN public.platform_user_projects pup
-                  ON pup.db_key = c.db_key
                 WHERE c.enabled = true
-                  AND pup.user_id = ?
-                ORDER BY c.db_key
+                  AND ( CAST(? AS boolean) = true
+                        OR EXISTS (SELECT 1 FROM public.platform_user_projects pup
+                                   WHERE pup.db_key = c.db_key AND pup.user_id = ?) )
+                ORDER BY c.created_at DESC, c.db_key
+                LIMIT ? OFFSET ?
                 """;
+        return metadataJdbcTemplate.query(sql, new ProjectListItemRowMapper(),
+                isSuperAdmin, userId, limit, offset);
+    }
 
-        return metadataJdbcTemplate.query(sql, new DatabaseConfigRowMapper(), userId);
+    /**
+     * Total count matching {@link #findVisibleProjects} (without paging), for the page total.
+     */
+    public long countVisibleProjects(boolean isSuperAdmin, java.util.UUID userId) {
+        String sql = """
+                SELECT COUNT(*)
+                FROM public.database_configs c
+                WHERE c.enabled = true
+                  AND ( CAST(? AS boolean) = true
+                        OR EXISTS (SELECT 1 FROM public.platform_user_projects pup
+                                   WHERE pup.db_key = c.db_key AND pup.user_id = ?) )
+                """;
+        Long count = metadataJdbcTemplate.queryForObject(sql, Long.class, isSuperAdmin, userId);
+        return count != null ? count : 0L;
     }
 
     public DatabaseConfig findByAppCode(String appCode) {
@@ -640,6 +657,30 @@ public class DatabaseConfigRepository {
             return Arrays.stream(objects)
                     .map(Object::toString)
                     .collect(Collectors.toList());
+        }
+
+        private java.time.Instant toInstant(Timestamp timestamp) {
+            return timestamp != null ? timestamp.toInstant() : null;
+        }
+    }
+
+    private static class ProjectListItemRowMapper implements RowMapper<ProjectListItem> {
+        @Override
+        public ProjectListItem mapRow(ResultSet rs, int rowNum) throws SQLException {
+            return ProjectListItem.builder()
+                    .dbKey(rs.getString("db_key"))
+                    .appCode(rs.getString("app_code"))
+                    .appName(rs.getString("app_name"))
+                    .dbName(rs.getString("db_name"))
+                    .description(rs.getString("description"))
+                    .schemaName(rs.getString("schema_name"))
+                    .initStatus(rs.getString("init_status"))
+                    .healthStatus(rs.getString("health_status"))
+                    .enabled(rs.getBoolean("enabled"))
+                    .createdAt(toInstant(rs.getTimestamp("created_at")))
+                    .updatedAt(toInstant(rs.getTimestamp("updated_at")))
+                    .serviceRoleToken(rs.getString("service_role_token"))
+                    .build();
         }
 
         private java.time.Instant toInstant(Timestamp timestamp) {

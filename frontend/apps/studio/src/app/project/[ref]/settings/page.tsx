@@ -15,7 +15,7 @@ import {
   Label,
 } from '@nubase/ui';
 import { useSession } from '@/lib/session';
-import { apiFetch, API_BASE, type ApiError } from '@/lib/api';
+import { apiFetch, fetchAllProjects, API_BASE, type ApiError } from '@/lib/api';
 import { MembersCard } from '@/components/members-card';
 import { useProjectRef } from '@/lib/route-params';
 
@@ -80,7 +80,7 @@ export default function SettingsPage({ params }: { params: { ref: string } }) {
   useEffect(() => {
     if (!platformKey || !projectRef) return;
     let cancelled = false;
-    apiFetch<{ ref: string; enabled: boolean }[]>('/auth/v1/admin/projects', { apikey: platformKey })
+    fetchAllProjects<{ ref: string; enabled: boolean }>(platformKey)
       .then((list) => {
         if (cancelled) return;
         const me = list.find((p) => p.ref === projectRef);

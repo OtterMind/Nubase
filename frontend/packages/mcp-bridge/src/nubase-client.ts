@@ -605,8 +605,23 @@ export class NubaseClient {
 
   // --- Project lifecycle control plane (/auth/v1/admin/projects) ----------
 
-  projectsList() {
-    return this.platformRequest('/auth/v1/admin/projects');
+  async projectsList() {
+    // Backend returns a paginated envelope { projects, total, page, per_page }. The tool contract
+    // is a flat list, so page through (backend caps per_page at 200) and accumulate — no silent
+    // truncation. A platform-auth error object (no projects field) is returned through unchanged.
+    const perPage = 200;
+    const first = await this.platformRequest(`/auth/v1/admin/projects?page=1&per_page=${perPage}`);
+    const firstProjects = (first as { projects?: unknown })?.projects;
+    if (!Array.isArray(firstProjects)) return first;
+    const all = [...firstProjects];
+    const total = Number((first as { total?: number }).total ?? all.length);
+    const pageCount = Math.ceil(total / perPage);
+    for (let page = 2; page <= pageCount; page++) {
+      const res = await this.platformRequest(`/auth/v1/admin/projects?page=${page}&per_page=${perPage}`);
+      const projects = (res as { projects?: unknown })?.projects;
+      if (Array.isArray(projects)) all.push(...projects);
+    }
+    return all;
   }
 
   projectKeysAdmin(args: Record<string, unknown>) {

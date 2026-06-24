@@ -152,28 +152,42 @@ public class AdminInitAuthFilter extends OncePerRequestFilter {
             }
 
             // 2. Validate the token — first try the platform JWT (if the path allows it),
-            //    then fall back to a string equality check against the metadata service-role-key
+            //    then fall back to a string equality check against the metadata service-role-key.
+            //    Resolve the caller's identity AND super-admin scope here, so downstream
+            //    controllers never have to re-load the user or special-case a null user id.
             boolean accepted = false;
+            boolean isSuperAdmin = false;
+            java.util.UUID resolvedUserId = null;
             if (acceptsPlatformJwt(requestPath)) {
                 try {
-                    java.util.UUID userId = platformAuthService.validateAndGetSubject(authToken);
-                    // Stash for downstream controllers; absence implies the request used the
-                    // metadata service-role-key, which is treated as super-admin scope.
-                    request.setAttribute("platformUserId", userId);
+                    PlatformAuthService.PlatformPrincipal principal =
+                            platformAuthService.resolvePrincipal(authToken);
+                    resolvedUserId = principal.userId();
+                    isSuperAdmin = principal.superAdmin();
                     accepted = true;
-                    log.debug("Platform JWT accepted for {}, user_id={}", requestPath, userId);
+                    log.debug("Platform JWT accepted for {}, user_id={}, superAdmin={}",
+                            requestPath, principal.userId(), isSuperAdmin);
                 } catch (Exception jwtFailure) {
                     log.debug("Platform JWT validation failed, falling back to service-role-key match: {}", jwtFailure.getMessage());
                 }
             }
             if (!accepted && keyMatches(authToken)) {
                 accepted = true;
+                isSuperAdmin = true; // metadata service-role key → root / super-admin scope
+                // The root key is not a human user; it acts as the reserved system user so that
+                // downstream code always sees a concrete platformUserId (never null).
+                resolvedUserId = PlatformAuthService.SYSTEM_USER_ID;
             }
             if (!accepted) {
                 log.warn("Admin init request with invalid token: {}", requestPath);
                 sendUnauthorizedResponse(response, "Invalid service role key");
                 return;
             }
+            // Single source of truth for the caller identity + super-admin decision. Downstream
+            // controllers can rely on platformUserId being non-null (SYSTEM_USER_ID for the root
+            // key); a null platformUserId in business code now signals a bug, not the metadata path.
+            request.setAttribute("platformUserId", resolvedUserId);
+            request.setAttribute("platformIsSuperAdmin", isSuperAdmin);
 
             // 3. Authentication succeeded, continue processing
             log.info("Admin init authentication successful for: {}", requestPath);

@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@nubase/ui';
 import { useSession, isProjectReady } from '@/lib/session';
-import { apiFetch } from '@/lib/api';
+import { fetchAllProjects } from '@/lib/api';
 import { useProjectRef } from '@/lib/route-params';
 import { type MessageKey, useI18n } from '@/lib/i18n';
 import { UserMenu } from './user-menu';
@@ -103,7 +103,7 @@ export function WorkspaceShell({
       return;
     }
     let cancelled = false;
-    apiFetch<ProjectSummary[]>('/auth/v1/admin/projects', { apikey: platformKey })
+    fetchAllProjects<ProjectSummary>(platformKey)
       .then((projects) => {
         if (cancelled) return;
         setProjects(projects);

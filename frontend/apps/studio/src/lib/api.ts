@@ -57,6 +57,41 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return (await res.text()) as unknown as T;
 }
 
+/** Paginated envelope returned by GET /auth/v1/admin/projects. */
+interface ProjectListEnvelope<T> {
+  projects: T[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+/**
+ * Fetch every project visible to the caller, flattening the backend's paginated response back
+ * into a single array. Studio's project views (dashboard stats/search, switcher, lookups by ref)
+ * operate over the full set, so this pages through with a large page size and accumulates.
+ * Typically one request; only large (super-admin) accounts trigger follow-up pages.
+ *
+ * `T` is the per-project shape the caller cares about (mirrors the old `apiFetch<T[]>` usage).
+ */
+export async function fetchAllProjects<T>(platformKey: string): Promise<T[]> {
+  const perPage = 200; // backend caps per_page at 200
+  const first = await apiFetch<ProjectListEnvelope<T>>(
+    `/auth/v1/admin/projects?page=1&per_page=${perPage}`,
+    { apikey: platformKey }
+  );
+  const all = [...(first.projects ?? [])];
+  const total = first.total ?? all.length;
+  const pageCount = Math.ceil(total / perPage);
+  for (let p = 2; p <= pageCount; p++) {
+    const res = await apiFetch<ProjectListEnvelope<T>>(
+      `/auth/v1/admin/projects?page=${p}&per_page=${perPage}`,
+      { apikey: platformKey }
+    );
+    all.push(...(res.projects ?? []));
+  }
+  return all;
+}
+
 function studioLoginPath(): string {
   if (typeof window === 'undefined') return '/login';
   const path = window.location.pathname;

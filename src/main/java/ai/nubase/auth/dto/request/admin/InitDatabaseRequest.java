@@ -93,7 +93,17 @@ public class InitDatabaseRequest {
     private Integer poolSize;
 
     /**
-     * Creator username (for audit)
+     * Optional name of the third-party platform creating this project (the integrating system).
+     * Together with {@link #externalUserId} it keys the external → Nubase user mapping, so it is
+     * required whenever {@code externalUserId} is provided.
      */
-    private String createdBy;
+    private String externalPlatform;
+
+    /**
+     * Optional creator identity in the calling third-party system — this is NOT a Nubase platform
+     * user id. When provided (together with {@link #externalPlatform}) the project is owned by the
+     * dedicated, non-super-admin Nubase user mapped from this external identity. Also persisted to
+     * {@code database_configs.created_by} for audit.
+     */
+    private String externalUserId;
 }

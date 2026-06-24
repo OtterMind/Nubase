@@ -205,7 +205,7 @@ public class DatabaseInitService {
                     jdbcUrl, dbUser, dbPassword,
                     jwtSecret, serviceRoleToken, authenticatedToken,
                     serviceRole, authenticatedRole, anonRole,
-                    request.getPoolSize(), request.getCreatedBy()
+                    request.getPoolSize(), request.getExternalUserId()
             );
 
             // Set the initialization status
