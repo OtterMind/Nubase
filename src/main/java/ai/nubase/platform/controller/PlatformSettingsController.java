@@ -1,8 +1,5 @@
 package ai.nubase.platform.controller;
 
-import ai.nubase.auth.service.PlatformAuthService;
-import ai.nubase.metadata.entity.PlatformUser;
-import ai.nubase.metadata.repository.PlatformUserRepository;
 import ai.nubase.platform.service.PlatformSettingsService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -51,7 +48,6 @@ public class PlatformSettingsController {
     );
 
     private final PlatformSettingsService settingsService;
-    private final PlatformUserRepository platformUserRepository;
 
     @GetMapping("/{category}")
     public ResponseEntity<?> get(@PathVariable("category") String category,
@@ -93,11 +89,9 @@ public class PlatformSettingsController {
     }
 
     private ResponseEntity<?> ensureSuperAdmin(HttpServletRequest request) {
-        UUID callerId = (UUID) request.getAttribute("platformUserId");
-        if (callerId == null) return null; // metadata service-role key path
-        PlatformUser caller = platformUserRepository.findById(callerId).orElse(null);
-        if (caller == null
-                || !PlatformAuthService.PLATFORM_ROLE_SUPER_ADMIN.equalsIgnoreCase(caller.getRole())) {
+        // Super-admin decision is made once (with a fresh role lookup) in AdminInitAuthFilter,
+        // covering both super_admin platform users and the metadata service-role key.
+        if (!Boolean.TRUE.equals(request.getAttribute("platformIsSuperAdmin"))) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "super_admin_required"));
         }

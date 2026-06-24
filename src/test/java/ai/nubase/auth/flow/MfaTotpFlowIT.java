@@ -86,7 +86,6 @@ class MfaTotpFlowIT {
         req.setDbName(dbKey);
         req.setAppCode(dbKey);
         req.setAppName("MFA Demo");
-        req.setCreatedBy("MfaTotpFlowIT");
         InitDatabaseResponse resp = databaseInitService.initDatabase(req);
         assertThat(resp.isSuccess()).as("tenant provisioning (msg: %s)", resp.getMessage()).isTrue();
 

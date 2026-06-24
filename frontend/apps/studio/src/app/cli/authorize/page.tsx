@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowRight, CheckCircle2, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 import { Button, Card, CardContent, Input, cn } from '@nubase/ui';
-import { apiFetch, type ApiError } from '@/lib/api';
+import { apiFetch, fetchAllProjects, type ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 
 interface ProjectSummary {
@@ -62,7 +62,7 @@ function CliAuthorizeContent() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    apiFetch<ProjectSummary[]>('/auth/v1/admin/projects', { apikey: platformKey })
+    fetchAllProjects<ProjectSummary>(platformKey)
       .then((res) => {
         if (cancelled) return;
         setProjects(res);

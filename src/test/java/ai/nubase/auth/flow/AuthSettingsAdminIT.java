@@ -59,7 +59,6 @@ class AuthSettingsAdminIT {
         req.setDbName(dbKey);
         req.setAppCode(dbKey);
         req.setAppName("AuthSettings Demo");
-        req.setCreatedBy("AuthSettingsAdminIT");
         InitDatabaseResponse resp = databaseInitService.initDatabase(req);
         assertThat(resp.isSuccess()).as("provision (msg: %s)", resp.getMessage()).isTrue();
         serviceKey = resp.getServiceRoleToken();

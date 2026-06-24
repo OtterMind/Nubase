@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CloudOff, Loader2, Zap } from 'lucide-react';
 import { Button, Card, CardContent } from '@nubase/ui';
-import { apiFetch, type ApiError } from '@/lib/api';
+import { apiFetch, fetchAllProjects, type ApiError } from '@/lib/api';
 import { useSession, type ProjectContext } from '@/lib/session';
 import { useProjectRef } from '@/lib/route-params';
 
@@ -113,7 +113,7 @@ interface ProjectSummary {
 }
 
 async function fetchProject(platformKey: string, projectRef: string): Promise<ProjectContext | null> {
-  const projects = await apiFetch<ProjectSummary[]>('/auth/v1/admin/projects', { apikey: platformKey });
+  const projects = await fetchAllProjects<ProjectSummary>(platformKey);
   const project = projects.find((p) => p.ref === projectRef);
   if (!project) return null;
   return {

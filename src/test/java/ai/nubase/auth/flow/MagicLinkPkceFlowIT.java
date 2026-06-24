@@ -83,7 +83,6 @@ class MagicLinkPkceFlowIT {
         req.setDbName(dbKey);
         req.setAppCode(dbKey);
         req.setAppName("MagicLink Demo");
-        req.setCreatedBy("MagicLinkPkceFlowIT");
         InitDatabaseResponse resp = databaseInitService.initDatabase(req);
         assertThat(resp.isSuccess()).as("tenant provisioning (msg: %s)", resp.getMessage()).isTrue();
 

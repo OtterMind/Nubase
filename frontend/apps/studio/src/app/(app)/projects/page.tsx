@@ -24,7 +24,7 @@ import {
   Skeleton,
   cn,
 } from '@nubase/ui';
-import { apiFetch, type ApiError } from '@/lib/api';
+import { fetchAllProjects, type ApiError } from '@/lib/api';
 import { useSession, isSuperAdmin } from '@/lib/session';
 import { useI18n } from '@/lib/i18n';
 
@@ -105,7 +105,7 @@ export default function ProjectsPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    apiFetch<ProjectSummary[]>('/auth/v1/admin/projects', { apikey: platformKey })
+    fetchAllProjects<ProjectSummary>(platformKey)
       .then((res) => {
         if (!cancelled) setProjects(res);
       })

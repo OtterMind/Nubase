@@ -84,7 +84,6 @@ class PkceFlowIT {
         req.setDbName(dbKey);          // valid identifier: starts lowercase, [a-z0-9_]
         req.setAppCode(dbKey);
         req.setAppName("PKCE Demo");
-        req.setCreatedBy("PkceFlowIT");
 
         InitDatabaseResponse resp = databaseInitService.initDatabase(req);
         assertThat(resp.isSuccess())

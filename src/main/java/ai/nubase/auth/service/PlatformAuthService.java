@@ -43,6 +43,14 @@ public class PlatformAuthService {
     public static final String PLATFORM_ROLE_SUPER_ADMIN = "super_admin";
     public static final String PLATFORM_ROLE_USER = "user";
 
+    /**
+     * Reserved owner for projects created via the metadata service-role key (root/automation),
+     * which carry no human user id. Seeded by Flyway migration V8 in {@code platform_users};
+     * guarantees every project has at least one ownership row so listing can go through
+     * {@code platform_user_projects} uniformly.
+     */
+    public static final UUID SYSTEM_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+
     private final PlatformUserRepository platformUserRepository;
     private final PasswordService passwordService;
     private final PlatformOtpService otpService;
@@ -339,6 +347,25 @@ public class PlatformAuthService {
             throw new IllegalArgumentException("Not a platform token");
         }
         return UUID.fromString(sub);
+    }
+
+    /**
+     * Validate a platform JWT and resolve the caller's identity together with their
+     * <em>current</em> role. Unlike {@link #validateAndGetSubject}, this loads the platform
+     * user fresh from the database, so a role change (e.g. demotion) takes effect immediately
+     * rather than lingering until the (up to 24h) token expires. Used by
+     * {@code AdminInitAuthFilter} to stash both the user id and the super-admin flag.
+     */
+    public PlatformPrincipal resolvePrincipal(String token) {
+        UUID userId = validateAndGetSubject(token);
+        PlatformUser user = platformUserRepository.findById(userId).orElse(null);
+        String role = user != null ? user.getRole() : null;
+        boolean superAdmin = PLATFORM_ROLE_SUPER_ADMIN.equalsIgnoreCase(role);
+        return new PlatformPrincipal(userId, superAdmin, role);
+    }
+
+    /** Resolved platform caller identity for a request (id + current role). */
+    public record PlatformPrincipal(UUID userId, boolean superAdmin, String role) {
     }
 
     private PlatformAuthResponse buildResponse(PlatformUser user) {

@@ -482,7 +482,7 @@ test('project lifecycle tools use platform key or jwt auth', async () => {
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(seen[0]?.url, 'http://localhost:9999/auth/v1/admin/projects');
+  assert.equal(seen[0]?.url, 'http://localhost:9999/auth/v1/admin/projects?page=1&per_page=200');
   assert.equal(seen[0]?.headers.apikey, 'metadata-key');
   assert.equal(seen[1]?.url, 'http://localhost:9999/auth/v1/admin/projects/proj_1/keys');
   assert.equal(seen[2]?.method, 'POST');

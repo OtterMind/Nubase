@@ -25,6 +25,7 @@ import ai.nubase.auth.dto.request.admin.UpdatePlatformUserRequest;
 import ai.nubase.auth.dto.request.admin.UpdateProjectRequest;
 import ai.nubase.auth.dto.response.admin.PlatformUserResponse;
 import ai.nubase.auth.dto.response.admin.ProjectKeysResponse;
+import ai.nubase.auth.dto.response.admin.ProjectListResponse;
 import ai.nubase.auth.dto.response.admin.ProjectMemberResponse;
 import ai.nubase.auth.dto.response.admin.ProjectSummaryResponse;
 import ai.nubase.auth.dto.response.admin.SqlHistoryEntry;
@@ -46,6 +47,7 @@ import ai.nubase.auth.exception.EmailAlreadyExistsException;
 import ai.nubase.auth.exception.UserNotFoundException;
 import ai.nubase.common.context.MultiTenancyContext;
 import ai.nubase.postgrest.multidb.DatabaseConfig;
+import ai.nubase.postgrest.multidb.ProjectListItem;
 import cn.hutool.json.JSONUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -78,6 +80,8 @@ public class AdminController {
     private final PlatformUserProjectRepository platformUserProjectRepository;
     private final SqlSnippetRepository sqlSnippetRepository;
     private final SqlExecutionRecordRepository sqlExecutionRecordRepository;
+    private final PlatformExternalIdentityService platformExternalIdentityService;
+    private final ProjectOwnershipService projectOwnershipService;
 
     /**
      * POST /auth/v1/admin/users - Create user
@@ -402,7 +406,8 @@ public class AdminController {
      * "authenticatedRole": "authenticated",  // optional, defaults to "authenticated"
      * "anonRole": "anon",                    // optional, defaults to "anon"
      * "poolSize": 10,                        // optional, defaults to 10
-     * "createdBy": "admin"                   // optional
+     * "externalPlatform": "acme",            // optional - third-party platform name
+     * "externalUserId": "u_123"              // optional - external user id; requires externalPlatform
      * }
      * <p>
      * Note:
@@ -420,10 +425,14 @@ public class AdminController {
                                                              HttpServletRequest httpRequest) {
         log.warn("Database initialization requested with Supabase schema structure");
 
+        ResponseEntity<InitDatabaseResponse> invalid = requireExternalPlatformIfExternalUser(request);
+        if (invalid != null) return invalid;
+
         InitDatabaseResponse response = databaseInitService.initDatabase(request);
 
         if (response.isSuccess()) {
-            recordProjectOwnership(httpRequest, request.getDbKey());
+            recordProjectOwnership(httpRequest, request.getDbKey(),
+                    request.getExternalPlatform(), request.getExternalUserId());
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } else {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
@@ -440,10 +449,15 @@ public class AdminController {
     public ResponseEntity<InitDatabaseResponse> initDatabaseConfig(@Valid @RequestBody InitDatabaseRequest request,
                                                                    HttpServletRequest httpRequest) {
         log.warn("Database config initialization");
+
+        ResponseEntity<InitDatabaseResponse> invalid = requireExternalPlatformIfExternalUser(request);
+        if (invalid != null) return invalid;
+
         InitDatabaseResponse response = databaseInitService.createDatabaseConfig(request);
 
         if (response.isSuccess()) {
-            recordProjectOwnership(httpRequest, request.getDbKey());
+            recordProjectOwnership(httpRequest, request.getDbKey(),
+                    request.getExternalPlatform(), request.getExternalUserId());
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } else {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
@@ -571,46 +585,60 @@ public class AdminController {
     }
 
     /**
-     * GET /auth/v1/admin/projects - List tenant projects visible to the caller.
+     * GET /auth/v1/admin/projects - List tenant projects visible to the caller (paginated).
      *
      * Cross-tenant endpoint authenticated by {@link ai.nubase.common.multitenancy.AdminInitAuthFilter}.
      * Two auth paths supported:
      *  - Metadata service-role-key (string equality) → no platformUserId stashed → treated as super-admin
      *  - Platform JWT → filter stashes platformUserId; we look up the user's role and scope the result
      *
-     * Scoping:
-     *  - super_admin or metadata key  → returns every enabled tenant
-     *  - regular user                 → returns only tenants joined via platform_user_projects
+     * Scoping (folded into one paginated query via {@code isSuperAdmin}):
+     *  - super_admin or metadata key  → every enabled tenant
+     *  - regular user                 → only tenants they are a member of (platform_user_projects)
+     *
+     * Secret exposure: the tenant {@code service_role_token} (returned as {@code apikey}) is only
+     * surfaced to super-admins and project owners — a non-owner {@code member} sees the project
+     * but not its root key.
      */
     @GetMapping("/admin/projects")
-    public ResponseEntity<List<ProjectSummaryResponse>> listProjects(HttpServletRequest request) {
+    public ResponseEntity<ProjectListResponse> listProjects(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(name = "per_page", defaultValue = "50") int perPage,
+            HttpServletRequest request) {
         UUID platformUserId = (UUID) request.getAttribute("platformUserId");
-        List<ai.nubase.postgrest.multidb.DatabaseConfig> configs;
-        if (platformUserId == null) {
-            configs = databaseConfigRepository.findAllEnabled();
-        } else {
-            PlatformUser user = platformUserRepository.findById(platformUserId).orElse(null);
-            if (user != null && PlatformAuthService.PLATFORM_ROLE_SUPER_ADMIN.equalsIgnoreCase(user.getRole())) {
-                configs = databaseConfigRepository.findAllEnabled();
-            } else {
-                configs = databaseConfigRepository.findEnabledByUserId(platformUserId);
-            }
-        }
-        List<ProjectSummaryResponse> projects = configs.stream()
-                .map(c -> ProjectSummaryResponse.builder()
-                        .ref(c.getAppCode() != null ? c.getAppCode() : c.getDbKey())
-                        .name(c.getAppName() != null ? c.getAppName() : c.getDbName())
-                        .description(c.getDescription())
-                        .schemaName(c.getSchemaName())
-                        .initStatus(c.getInitStatus())
-                        .healthStatus(c.getHealthStatus())
-                        .enabled(c.getEnabled())
-                        .createdAt(c.getCreatedAt())
-                        .updatedAt(c.getUpdatedAt())
-                        .apikey(c.getServiceRoleToken())
+        boolean isSuperAdmin = isSuperAdmin(request);
+
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(Math.max(1, perPage), 200);
+        int offset = (safePage - 1) * safeSize;
+
+        long total = databaseConfigRepository.countVisibleProjects(isSuperAdmin, platformUserId);
+        List<ProjectListItem> rows = databaseConfigRepository.findVisibleProjects(
+                isSuperAdmin, platformUserId, safeSize, offset);
+
+        List<ProjectSummaryResponse> projects = rows.stream()
+                .map(r -> ProjectSummaryResponse.builder()
+                        .ref(r.getAppCode() != null ? r.getAppCode() : r.getDbKey())
+                        .name(r.getAppName() != null ? r.getAppName() : r.getDbName())
+                        .description(r.getDescription())
+                        .schemaName(r.getSchemaName())
+                        .initStatus(r.getInitStatus())
+                        .healthStatus(r.getHealthStatus())
+                        .enabled(r.getEnabled())
+                        .createdAt(r.getCreatedAt())
+                        .updatedAt(r.getUpdatedAt())
+                        // Anyone who can see a project (owner, member, or super-admin) gets its
+                        // service-role key — Studio drives project operations with it.
+                        .apikey(r.getServiceRoleToken())
                         .build())
                 .toList();
-        return ResponseEntity.ok(projects);
+
+        return ResponseEntity.ok(ProjectListResponse.builder()
+                .projects(projects)
+                .total(total)
+                .page(safePage)
+                .perPage(safeSize)
+                .build());
     }
 
     /**
@@ -633,17 +661,12 @@ public class AdminController {
         }
 
         UUID platformUserId = (UUID) request.getAttribute("platformUserId");
-        if (platformUserId != null) {
-            PlatformUser user = platformUserRepository.findById(platformUserId).orElse(null);
-            boolean superAdmin = user != null
-                    && PlatformAuthService.PLATFORM_ROLE_SUPER_ADMIN.equalsIgnoreCase(user.getRole());
-            if (!superAdmin) {
-                boolean owns = platformUserProjectRepository.existsByUserIdAndDbKey(
-                        platformUserId, config.getDbKey());
-                if (!owns) {
-                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                            .body(java.util.Map.of("error", "not_project_owner"));
-                }
+        if (!isSuperAdmin(request)) {
+            boolean owns = platformUserProjectRepository.existsByUserIdAndDbKey(
+                    platformUserId, config.getDbKey());
+            if (!owns) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(java.util.Map.of("error", "not_project_owner"));
             }
         }
 
@@ -770,12 +793,8 @@ public class AdminController {
      */
     private ResponseEntity<?> ensureCanManageMembers(HttpServletRequest request, String dbKey, boolean readOnly) {
         UUID callerId = (UUID) request.getAttribute("platformUserId");
-        if (callerId == null) {
-            // Metadata service-role-key path — trusted, no further check.
-            return null;
-        }
-        PlatformUser caller = platformUserRepository.findById(callerId).orElse(null);
-        if (caller != null && PlatformAuthService.PLATFORM_ROLE_SUPER_ADMIN.equalsIgnoreCase(caller.getRole())) {
+        if (isSuperAdmin(request)) {
+            // Super-admin or the metadata service-role key (system actor) — trusted.
             return null;
         }
         PlatformUserProject mapping = platformUserProjectRepository
@@ -796,13 +815,17 @@ public class AdminController {
     // ==================== Platform User Admin (super_admin only) ====================
 
     /**
-     * GET /auth/v1/admin/platform/users — list all platform users. super_admin only.
+     * GET /auth/v1/admin/platform/users — list human platform users. super_admin only.
+     * Excludes the reserved system user and machine-managed external "shadow" accounts.
      */
     @GetMapping("/admin/platform/users")
     public ResponseEntity<?> listPlatformUsers(HttpServletRequest request) {
         ResponseEntity<?> denied = ensureSuperAdmin(request);
         if (denied != null) return denied;
+        java.util.Set<UUID> hidden = platformExternalIdentityService.allShadowUserIds();
         List<PlatformUserResponse> users = platformUserRepository.findAll().stream()
+                .filter(u -> !PlatformAuthService.SYSTEM_USER_ID.equals(u.getId()))
+                .filter(u -> !hidden.contains(u.getId()))
                 .map(u -> PlatformUserResponse.builder()
                         .id(u.getId().toString())
                         .email(u.getEmail())
@@ -826,6 +849,10 @@ public class AdminController {
                                                 HttpServletRequest request) {
         ResponseEntity<?> denied = ensureSuperAdmin(request);
         if (denied != null) return denied;
+        if (isSystemActor(id)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "cannot_modify_system_user"));
+        }
         PlatformUser u = platformUserRepository.findById(id).orElse(null);
         if (u == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -853,6 +880,10 @@ public class AdminController {
     public ResponseEntity<?> deletePlatformUser(@PathVariable("id") UUID id, HttpServletRequest request) {
         ResponseEntity<?> denied = ensureSuperAdmin(request);
         if (denied != null) return denied;
+        if (isSystemActor(id)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "cannot_modify_system_user"));
+        }
         UUID callerId = (UUID) request.getAttribute("platformUserId");
         if (callerId != null && callerId.equals(id)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -867,15 +898,30 @@ public class AdminController {
     }
 
     private ResponseEntity<?> ensureSuperAdmin(HttpServletRequest request) {
-        UUID callerId = (UUID) request.getAttribute("platformUserId");
-        if (callerId == null) return null; // metadata key → trusted
-        PlatformUser caller = platformUserRepository.findById(callerId).orElse(null);
-        if (caller == null
-                || !PlatformAuthService.PLATFORM_ROLE_SUPER_ADMIN.equalsIgnoreCase(caller.getRole())) {
+        if (!isSuperAdmin(request)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "super_admin_required"));
         }
         return null;
+    }
+
+    /**
+     * Whether the current request is authenticated as a super-admin — either the metadata
+     * service-role key or a platform user whose <em>current</em> role is super_admin. The
+     * decision is made once in {@code AdminInitAuthFilter} (which loads the role fresh) and
+     * stashed as a request attribute, so controllers never re-query the user.
+     */
+    private boolean isSuperAdmin(HttpServletRequest request) {
+        return Boolean.TRUE.equals(request.getAttribute("platformIsSuperAdmin"));
+    }
+
+    /**
+     * The reserved system actor — the root / metadata service-role key, which
+     * {@code AdminInitAuthFilter} maps to {@link PlatformAuthService#SYSTEM_USER_ID}. It is not a
+     * human platform user, so endpoints that record per-user ownership (e.g. SQL snippets) reject it.
+     */
+    private boolean isSystemActor(UUID platformUserId) {
+        return PlatformAuthService.SYSTEM_USER_ID.equals(platformUserId);
     }
 
     // ==================== SQL snippets & history ====================
@@ -895,7 +941,7 @@ public class AdminController {
         if (denied != null) return denied;
 
         UUID callerId = (UUID) request.getAttribute("platformUserId");
-        if (callerId == null) return ResponseEntity.ok(List.of());
+        if (isSystemActor(callerId)) return ResponseEntity.ok(List.of()); // root key owns no snippets
 
         List<SqlSnippetResponse> out = sqlSnippetRepository
                 .findByPlatformUserIdAndDbKeyOrderByUpdatedAtDesc(callerId, config.getDbKey())
@@ -924,7 +970,7 @@ public class AdminController {
         ResponseEntity<?> denied = ensureCanManageMembers(request, config.getDbKey(), true);
         if (denied != null) return denied;
         UUID callerId = (UUID) request.getAttribute("platformUserId");
-        if (callerId == null) {
+        if (isSystemActor(callerId)) { // the root key is not a human snippet owner
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "platform_user_required"));
         }
@@ -949,7 +995,7 @@ public class AdminController {
                     .body(Map.of("error", "project_not_found"));
         }
         UUID callerId = (UUID) request.getAttribute("platformUserId");
-        if (callerId == null) {
+        if (isSystemActor(callerId)) { // the root key is not a human snippet owner
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "platform_user_required"));
         }
@@ -976,7 +1022,7 @@ public class AdminController {
                     .body(Map.of("error", "project_not_found"));
         }
         UUID callerId = (UUID) request.getAttribute("platformUserId");
-        if (callerId == null) {
+        if (isSystemActor(callerId)) { // the root key is not a human snippet owner
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "platform_user_required"));
         }
@@ -1114,25 +1160,45 @@ public class AdminController {
                 .build());
     }
 
+    /** Provision path (no request body) — no third-party attribution. */
+    private void recordProjectOwnership(HttpServletRequest request, String dbKey) {
+        recordProjectOwnership(request, dbKey, null, null);
+    }
+
     /**
-     * Auto-bind a newly created project to its creator (if the request came through
-     * a platform JWT). Called after init/database* succeeds.
+     * Record project ownership via {@link ProjectOwnershipService} (which owns the transaction).
+     * Retries once on a write race: two callers creating the same external-user mapping or
+     * ownership row concurrently — the retry finds the winning rows and becomes a no-op.
      */
-    @Transactional("metadataTransactionManager")
-    void recordProjectOwnership(HttpServletRequest request, String dbKey) {
-        UUID platformUserId = (UUID) request.getAttribute("platformUserId");
-        if (platformUserId == null || dbKey == null) {
-            return; // metadata-key path or missing dbKey — no per-user mapping
+    private void recordProjectOwnership(HttpServletRequest request, String dbKey,
+                                        String externalPlatform, String externalUserId) {
+        UUID caller = (UUID) request.getAttribute("platformUserId");
+        try {
+            projectOwnershipService.recordOwnership(caller, dbKey, externalPlatform, externalUserId);
+        } catch (org.springframework.dao.DataIntegrityViolationException race) {
+            log.warn("Ownership/identity write raced for db_key={}; retrying once: {}", dbKey, race.getMessage());
+            projectOwnershipService.recordOwnership(caller, dbKey, externalPlatform, externalUserId);
         }
-        if (platformUserProjectRepository.existsByUserIdAndDbKey(platformUserId, dbKey)) {
-            return;
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    /**
+     * The external→Nubase user mapping is keyed by {@code (externalPlatform, externalUserId)}, so
+     * the platform name is required whenever an external user id is supplied. Returns a 400
+     * response when it is missing, else null.
+     */
+    private ResponseEntity<InitDatabaseResponse> requireExternalPlatformIfExternalUser(InitDatabaseRequest request) {
+        if (hasText(request.getExternalUserId()) && !hasText(request.getExternalPlatform())) {
+            return ResponseEntity.badRequest().body(InitDatabaseResponse.builder()
+                    .success(false)
+                    .error("external_platform_required")
+                    .message("externalPlatform is required when externalUserId is provided")
+                    .build());
         }
-        platformUserProjectRepository.save(PlatformUserProject.builder()
-                .userId(platformUserId)
-                .dbKey(dbKey)
-                .role("owner")
-                .build());
-        log.info("Recorded project ownership: user_id={}, db_key={}", platformUserId, dbKey);
+        return null;
     }
 
     // ==================== OAuth Configuration Management ====================
