@@ -9,7 +9,7 @@ import java.io.Serializable;
 
 /**
  * OAuth State Data
- * Stores context information for OAuth flow in Redis
+ * Stores context information for OAuth flow state.
  */
 @Data
 @Builder
@@ -33,6 +33,12 @@ public class OAuthStateData implements Serializable {
      * Redirect URL after OAuth callback
      */
     private String redirectTo;
+
+    /**
+     * OAuth provider callback URL used when the flow was initiated. The provider requires the
+     * token exchange redirect_uri to exactly match the original authorization redirect_uri.
+     */
+    private String callbackUrl;
 
     /**
      * Timestamp when state was created

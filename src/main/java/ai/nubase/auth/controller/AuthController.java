@@ -293,11 +293,13 @@ public class AuthController {
         try {
             String state = tokenGenerator.generateSecureToken();
             String apikey = MultiTenancyContext.getApiKey();
+            String callbackUrl = buildCallbackUrl(request);
 
             OAuthStateData stateData = OAuthStateData.builder()
                     .provider(provider)
                     .apikey(apikey)
                     .redirectTo(redirectTo)
+                    .callbackUrl(callbackUrl)
                     .codeChallenge(codeChallenge)
                     .codeChallengeMethod(codeChallengeMethod)
                     .linkUserId(linkUserId)
@@ -306,7 +308,6 @@ public class AuthController {
 
             oauthStateService.saveState(state, stateData);
 
-            String callbackUrl = buildCallbackUrl(request);
             String authUrl = oauthService.getAuthorizationUrl(provider, callbackUrl, state);
 
             HttpHeaders headers = new HttpHeaders();
@@ -380,8 +381,9 @@ public class AuthController {
             // Open-redirect guard before bouncing the browser to the supplied target.
             String redirectTo = redirectUrlValidator.sanitize(stateData.getRedirectTo());
 
-            // Build callback URL dynamically from current request (must match the one used in authorize)
-            String callbackUrl = buildCallbackUrl(request);
+            // Reuse the callback URL from authorize. Google requires the token-exchange
+            // redirect_uri to exactly match the redirect_uri used to obtain the code.
+            String callbackUrl = StringUtils.defaultIfBlank(stateData.getCallbackUrl(), buildCallbackUrl(request));
 
             // PKCE: when the client started the flow with a code_challenge, complete the login
             // but hand back a one-time auth code (?code=) instead of tokens-in-fragment.
@@ -516,15 +518,21 @@ public class AuthController {
      * @return Full callback URL (e.g., https://app123.nubase.co/auth/v1/callback)
      */
     private String buildCallbackUrl(HttpServletRequest request) {
-        String scheme = request.getHeader("X-Forwarded-Proto");
-        if (StringUtils.isBlank(scheme)) {
+        String forwardedProto = request.getHeader("X-Forwarded-Proto");
+        String scheme = forwardedProto;
+        if (StringUtils.isBlank(forwardedProto)) {
             scheme = request.getScheme();
         }
         String serverName = request.getServerName();
         String forwardedPort = request.getHeader("X-Forwarded-Port");
-        int serverPort = StringUtils.isNotBlank(forwardedPort)
-                ? Integer.parseInt(forwardedPort)
-                : request.getServerPort();
+        int serverPort;
+        if (StringUtils.isNotBlank(forwardedPort)) {
+            serverPort = Integer.parseInt(forwardedPort);
+        } else if (StringUtils.isNotBlank(forwardedProto)) {
+            serverPort = defaultPortForScheme(scheme);
+        } else {
+            serverPort = request.getServerPort();
+        }
         StringBuilder callbackUrl = new StringBuilder();
         callbackUrl.append(scheme).append("://").append(serverName);
         if (shouldAppendPort(scheme, serverPort)) {
@@ -533,6 +541,16 @@ public class AuthController {
         callbackUrl.append("/auth/v1/callback");
 
         return callbackUrl.toString();
+    }
+
+    private int defaultPortForScheme(String scheme) {
+        if ("http".equalsIgnoreCase(scheme)) {
+            return 80;
+        }
+        if ("https".equalsIgnoreCase(scheme)) {
+            return 443;
+        }
+        return -1;
     }
 
     private boolean shouldAppendPort(String scheme, int port) {
