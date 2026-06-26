@@ -4,7 +4,8 @@ import ai.nubase.auth.dto.request.admin.ExecuteSqlRequest;
 import ai.nubase.auth.dto.response.admin.SqlExecutionResponse;
 import ai.nubase.auth.service.AdminService;
 import ai.nubase.auth.service.DatabaseInitService;
-import ai.nubase.auth.service.PlatformAuthService;
+import ai.nubase.auth.service.PlatformExternalIdentityService;
+import ai.nubase.auth.service.ProjectOwnershipService;
 import ai.nubase.auth.service.RlsPolicyExportService;
 import ai.nubase.auth.service.SchemaDdlExportService;
 import ai.nubase.auth.service.SchemaInitService;
@@ -50,7 +51,9 @@ class AdminControllerSqlDryRunTest {
                 mock(PlatformUserRepository.class),
                 mock(PlatformUserProjectRepository.class),
                 mock(SqlSnippetRepository.class),
-                mock(SqlExecutionRecordRepository.class)
+                mock(SqlExecutionRecordRepository.class),
+                mock(PlatformExternalIdentityService.class),
+                mock(ProjectOwnershipService.class)
         ));
     }
 
