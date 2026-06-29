@@ -11,6 +11,8 @@ import ai.nubase.common.config.AuthConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Instant;
 import java.util.Map;
@@ -31,6 +33,7 @@ class OAuthServiceEmailLinkTest {
     private UserRepository userRepository;
     private IdentityRepository identityRepository;
     private EffectiveAuthConfig effectiveAuthConfig;
+    private TransactionOperations transactionOperations;
     private OAuthService svc;
 
     private final UUID victimId = UUID.randomUUID();
@@ -40,7 +43,13 @@ class OAuthServiceEmailLinkTest {
         userRepository = mock(UserRepository.class);
         identityRepository = mock(IdentityRepository.class);
         effectiveAuthConfig = mock(EffectiveAuthConfig.class);
+        transactionOperations = mock(TransactionOperations.class);
         OAuthProvider provider = mock(OAuthProvider.class);
+        when(transactionOperations.execute(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            TransactionCallback<Object> callback = inv.getArgument(0);
+            return callback.doInTransaction(null);
+        });
 
         svc = new OAuthService(
                 Map.of("github", provider),
@@ -52,7 +61,8 @@ class OAuthServiceEmailLinkTest {
                 new UserMapper(),
                 new AuthConfig(),
                 effectiveAuthConfig,
-                mock(AuthResponseFactory.class));
+                mock(AuthResponseFactory.class),
+                transactionOperations);
 
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(identityRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

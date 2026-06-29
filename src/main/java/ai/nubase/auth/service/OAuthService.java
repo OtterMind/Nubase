@@ -20,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -49,6 +50,7 @@ public class OAuthService {
     private final AuthConfig authConfig;
     private final EffectiveAuthConfig effectiveAuthConfig;
     private final AuthResponseFactory authResponseFactory;
+    private final TransactionOperations transactionOperations;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -62,16 +64,17 @@ public class OAuthService {
     /**
      * Handle OAuth callback and sign in/up user
      */
-    @Transactional
     public AuthResponse handleCallback(String providerName, String code, String redirectUri) {
         log.info("Handling OAuth callback for provider: {}", providerName);
 
-        // Get user info from OAuth provider
-        OAuthProvider provider = getProvider(providerName);
-        OAuthUserInfo oauthUserInfo = provider.getUserInfo(code, redirectUri);
+        OAuthUserInfo oauthUserInfo = resolveProviderUserInfo(providerName, code, redirectUri);
 
         log.debug("OAuth user info received: provider={}, email={}", providerName, oauthUserInfo.getEmail());
 
+        return transactionOperations.execute(status -> handleCallbackWithProviderInfo(providerName, oauthUserInfo));
+    }
+
+    private AuthResponse handleCallbackWithProviderInfo(String providerName, OAuthUserInfo oauthUserInfo) {
         // Find or create user
         User user = findOrCreateUser(oauthUserInfo);
 
@@ -108,11 +111,9 @@ public class OAuthService {
      * optionally issuing tokens. With {@code issueTokens=false} the caller gets the resolved
      * user but no session — used by the PKCE flow, which instead issues a one-time auth code.
      */
-    @Transactional
     public ProviderSignIn resolveCallback(String providerName, String code, String redirectUri, boolean issueTokens) {
-        OAuthProvider provider = getProvider(providerName);
-        OAuthUserInfo info = provider.getUserInfo(code, redirectUri);
-        return signInWithProviderInfo(info, issueTokens);
+        OAuthUserInfo info = resolveProviderUserInfo(providerName, code, redirectUri);
+        return transactionOperations.execute(status -> signInWithProviderInfo(info, issueTokens));
     }
 
     /**
@@ -150,11 +151,13 @@ public class OAuthService {
      * linking). Refuses if the identity already belongs to a different user. Issues a session
      * for the (now multi-identity) user.
      */
-    @Transactional
     public AuthResponse linkIdentity(String providerName, String code, String redirectUri, java.util.UUID linkUserId) {
-        OAuthProvider provider = getProvider(providerName);
-        OAuthUserInfo info = provider.getUserInfo(code, redirectUri);
+        OAuthUserInfo info = resolveProviderUserInfo(providerName, code, redirectUri);
 
+        return transactionOperations.execute(status -> linkIdentityWithProviderInfo(providerName, info, linkUserId));
+    }
+
+    private AuthResponse linkIdentityWithProviderInfo(String providerName, OAuthUserInfo info, java.util.UUID linkUserId) {
         Optional<Identity> existing = identityRepository
                 .findByProviderAndProviderId(info.getProvider(), info.getProviderId());
         if (existing.isPresent() && !existing.get().getUser().getId().equals(linkUserId)) {
@@ -173,6 +176,12 @@ public class OAuthService {
         user = userRepository.save(user);
 
         return authResponseFactory.newSignIn(user, ai.nubase.auth.entity.MfaAmrClaim.METHOD_OAUTH);
+    }
+
+    private OAuthUserInfo resolveProviderUserInfo(String providerName, String code, String redirectUri) {
+        // External OAuth calls may block or timeout; callers keep them outside tenant DB transactions.
+        OAuthProvider provider = getProvider(providerName);
+        return provider.getUserInfo(code, redirectUri);
     }
 
     /**

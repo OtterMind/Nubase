@@ -11,6 +11,8 @@ import ai.nubase.common.config.AuthConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +35,7 @@ class OAuthServiceTest {
     private IdentityRepository identityRepository;
     private AuthResponseFactory authResponseFactory;
     private EffectiveAuthConfig effectiveAuthConfig;
+    private TransactionOperations transactionOperations;
     private OAuthProvider provider;
     private OAuthService svc;
 
@@ -45,16 +48,22 @@ class OAuthServiceTest {
         identityRepository = mock(IdentityRepository.class);
         authResponseFactory = mock(AuthResponseFactory.class);
         effectiveAuthConfig = mock(EffectiveAuthConfig.class);
+        transactionOperations = mock(TransactionOperations.class);
         provider = mock(OAuthProvider.class);
         when(provider.getProviderName()).thenReturn("google");
         when(provider.getUserInfo("code", "uri")).thenReturn(OAuthUserInfo.builder()
                 .provider("google").providerId("sub1").email("g@x.com").emailVerified(true).build());
+        when(transactionOperations.execute(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            TransactionCallback<Object> callback = inv.getArgument(0);
+            return callback.doInTransaction(null);
+        });
 
         svc = new OAuthService(
                 Map.of("google", provider), userRepository, identityRepository,
                 mock(ai.nubase.auth.repository.SessionRepository.class), mock(JwtSecretService.class),
                 mock(TokenService.class), new ai.nubase.auth.util.UserMapper(), new AuthConfig(),
-                effectiveAuthConfig, authResponseFactory);
+                effectiveAuthConfig, authResponseFactory, transactionOperations);
 
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(identityRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -97,5 +106,19 @@ class OAuthServiceTest {
 
         assertThatThrownBy(() -> svc.linkIdentity("google", "code", "uri", targetUserId))
                 .isInstanceOf(RuntimeException.class).hasMessageContaining("User to link not found");
+    }
+
+    @Test
+    @DisplayName("does not start a tenant transaction when provider callback lookup fails")
+    void providerFailureBeforeTransaction() {
+        RuntimeException timeout = new RuntimeException("timeout");
+        when(provider.getUserInfo("slow", "uri")).thenThrow(timeout);
+
+        assertThatThrownBy(() -> svc.handleCallback("google", "slow", "uri"))
+                .isSameAs(timeout);
+
+        verify(transactionOperations, never()).execute(any());
+        verify(identityRepository, never()).findByProviderAndProviderId(anyString(), anyString());
+        verify(userRepository, never()).findByEmail(anyString());
     }
 }

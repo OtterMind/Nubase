@@ -31,6 +31,8 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.Duration;
@@ -178,6 +180,13 @@ public class MultiDatabaseConfiguration implements CachingConfigurer {
     public PlatformTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
         log.info("Configuring primary JpaTransactionManager for multi-tenant JPA");
         return new JpaTransactionManager(entityManagerFactory);
+    }
+
+    @Bean
+    @Primary
+    public TransactionOperations transactionOperations(
+            @Qualifier("transactionManager") PlatformTransactionManager transactionManager) {
+        return new TransactionTemplate(transactionManager);
     }
 
     /**
