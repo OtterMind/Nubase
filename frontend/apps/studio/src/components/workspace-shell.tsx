@@ -13,7 +13,6 @@ import {
   Terminal,
   Users,
   HardDrive,
-  Activity,
   Brain,
   Settings,
   Bot,
@@ -48,7 +47,7 @@ const WORKSPACE_NAV: NavItem[] = [
   { labelKey: 'shell.nav.account', href: '/account', icon: User },
 ];
 
-function projectNav(ref: string): NavItem[] {
+export function projectNav(ref: string): NavItem[] {
   return [
     { labelKey: 'shell.nav.home', href: `/project/${ref}`, icon: Home, exact: true },
     { labelKey: 'shell.nav.tableEditor', href: `/project/${ref}/editor`, icon: Table2 },
@@ -61,7 +60,6 @@ function projectNav(ref: string): NavItem[] {
     { labelKey: 'shell.nav.functions', href: `/project/${ref}/functions`, icon: CloudCog },
     { labelKey: 'shell.nav.cron', href: `/project/${ref}/cron`, icon: CalendarClock },
     { labelKey: 'shell.nav.connectAgent', href: `/project/${ref}/connect-agent`, icon: Cable },
-    { labelKey: 'shell.nav.logs', href: `/project/${ref}/logs`, icon: Activity },
     { labelKey: 'shell.nav.settings', href: `/project/${ref}/settings`, icon: Settings },
   ];
 }
