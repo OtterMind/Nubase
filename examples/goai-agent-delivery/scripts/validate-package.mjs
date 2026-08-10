@@ -144,6 +144,7 @@ async function validateMcpToolPolicies(runtimeRoot) {
   const policyPath = path.join(runtimeRoot, 'mcp-tool-policies.json');
   const policy = await readJson(policyPath, 'MCP tool policies');
   if (!policy) return;
+  const policyLabel = relative(policyPath);
   assertExactKeys(
     policy,
     [
@@ -152,156 +153,519 @@ async function validateMcpToolPolicies(runtimeRoot) {
       'enforcement',
       'optionalDefenseInDepth',
       'secretInjection',
-      'deniedSensitiveTools',
+      'deniedSensitiveToolsByTransport',
       'routes',
       'requiredToolsNotYetExposed',
     ],
-    relative(policyPath),
+    policyLabel,
   );
-  expectEqual(policy.schemaVersion, '1.0.0', `${relative(policyPath)} schemaVersion`);
-  expectEqual(policy.agentTeamsVersion, 'v1.2.2', `${relative(policyPath)} agentTeamsVersion`);
-  expectEqual(policy.secretInjection, 'runtime-only', `${relative(policyPath)} secretInjection`);
+  expectEqual(policy.schemaVersion, '2.0.0', policyLabel + ' schemaVersion');
+  expectEqual(policy.agentTeamsVersion, 'v1.2.2', policyLabel + ' agentTeamsVersion');
+  expectEqual(policy.secretInjection, 'runtime-only', policyLabel + ' secretInjection');
   if (!deepEqual(policy.enforcement, [
     'Higress MCP server allowTools',
     'Higress consumer authorization',
   ])) {
-    addError(`${relative(policyPath)} must declare the two authoritative Higress enforcement boundaries`);
+    addError(policyLabel + ' must declare the two authoritative Higress enforcement boundaries');
   }
-  const enforcementText = Array.isArray(policy.enforcement) ? policy.enforcement.join(' ') : '';
-  if (/remote\s+Java|direct\s+CLI/i.test(enforcementText)) {
-    addError(`${relative(policyPath)} must not claim tool filtering for direct CLI or remote Java MCP`);
-  }
+
   const defense = policy.optionalDefenseInDepth ?? {};
   assertExactKeys(
     defense,
     ['component', 'controls', 'scope', 'notCovered'],
-    `${relative(policyPath)} optionalDefenseInDepth`,
+    policyLabel + ' optionalDefenseInDepth',
   );
   expectEqual(
     defense.component,
     'Nubase TypeScript stdio MCP bridge',
-    `${relative(policyPath)} optionalDefenseInDepth component`,
+    policyLabel + ' optionalDefenseInDepth component',
   );
   if (!deepEqual(defense.controls, ['NUBASE_ALLOWED_TOOLS', 'NUBASE_DENIED_TOOLS'])) {
-    addError(`${relative(policyPath)} optional stdio controls must use the reviewed allow/deny variables`);
+    addError(policyLabel + ' optional stdio controls must use the reviewed allow/deny variables');
   }
   expectEqual(
     defense.scope,
     'tools/list and call dispatch',
-    `${relative(policyPath)} optionalDefenseInDepth scope`,
+    policyLabel + ' optionalDefenseInDepth scope',
   );
   if (!deepEqual(defense.notCovered, ['direct Nubase CLI commands', 'remote Java /mcp'])) {
-    addError(`${relative(policyPath)} must explicitly exclude direct CLI and remote Java /mcp`);
+    addError(policyLabel + ' must explicitly exclude direct CLI and remote Java /mcp from stdio defense-in-depth');
   }
 
-  const toolSourcePath = path.join(repositoryRoot, 'frontend', 'packages', 'mcp-bridge', 'src', 'tools.ts');
+  const stdioTools = await extractStdioMcpTools();
+  const javaTools = await extractJavaMcpTools();
+  if (stdioTools.length === 0 || javaTools.length === 0) return;
+
+  const sensitiveByTransport = policy.deniedSensitiveToolsByTransport ?? {};
+  assertExactKeys(
+    sensitiveByTransport,
+    ['stdioBridgePolicy', 'javaHttpPolicy'],
+    policyLabel + ' deniedSensitiveToolsByTransport',
+  );
+  const transportInventories = new Map([
+    ['stdioBridgePolicy', stdioTools],
+    ['javaHttpPolicy', javaTools],
+  ]);
+  for (const [transport, inventory] of transportInventories) {
+    const sensitive = Array.isArray(sensitiveByTransport[transport])
+      ? sensitiveByTransport[transport]
+      : [];
+    if (!Array.isArray(sensitiveByTransport[transport])) {
+      addError(policyLabel + ' deniedSensitiveToolsByTransport.' + transport + ' must be an array');
+    }
+    assertUnique(sensitive, policyLabel + ' deniedSensitiveToolsByTransport.' + transport);
+    const inventorySet = new Set(inventory);
+    for (const tool of sensitive) {
+      if (!inventorySet.has(tool)) {
+        addError(policyLabel + ' references unknown ' + transport + ' sensitive tool ' + tool);
+      }
+    }
+  }
+
+  const expectedConsumerByWorker = new Map([
+    ['nubase-delivery-lead', 'worker-nubase-delivery-lead'],
+    ['nubase-builder', 'worker-nubase-builder'],
+    ['nubase-verifier', 'worker-nubase-verifier'],
+    ['nubase-release-governor', 'worker-nubase-release-governor'],
+  ]);
+  const expectedRoutes = new Map([
+    ['nubase-read', {
+      server: 'mcp-nubase-read',
+      workers: ['nubase-delivery-lead', 'nubase-verifier'],
+      consumers: ['worker-nubase-delivery-lead', 'worker-nubase-verifier'],
+      guards: {
+        NUBASE_ALLOW_SQL_EXECUTE: false,
+        NUBASE_ALLOW_DANGEROUS_SQL: false,
+        NUBASE_ALLOW_ADMIN_WRITE: false,
+      },
+      stdioAllow: [
+        'fetch_docs',
+        'nubase_capabilities',
+        'nubase_instructions',
+        'memory_context',
+        'memory_search',
+        'rest_select',
+        'sql_dry_run',
+        'db_export_schema',
+        'db_list_migrations',
+        'deployments_list',
+        'deployment_status',
+        'deployment_logs',
+        'app_workers_list',
+        'app_worker_status',
+        'storage_list_buckets',
+        'storage_list_objects',
+        'auth_get_settings',
+        'gateway_usage',
+        'gateway_usage_daily',
+        'gateway_usage_by_model',
+        'gateway_usage_logs',
+        'gateway_pricing',
+        'assets_list',
+        'functions_list',
+        'functions_logs',
+        'cron_list',
+        'cron_get',
+        'cron_runs',
+      ],
+      javaReadiness: 'READY_AFTER_ROUTE_AND_AUTH_VERIFICATION',
+      javaAllow: [
+        'memorySearch',
+        'memoryContext',
+        'listTables',
+        'getTableStructure',
+        'exportRlsPolicies',
+        'deploymentsList',
+        'deploymentStatus',
+        'deploymentLogs',
+        'appWorkersList',
+        'appWorkerStatus',
+        'storageListBuckets',
+        'assetsList',
+        'functionsList',
+        'functionsLogs',
+        'cronList',
+        'cronGet',
+        'cronRuns',
+      ],
+    }],
+    ['nubase-build', {
+      server: 'mcp-nubase-build',
+      workers: ['nubase-builder'],
+      consumers: ['worker-nubase-builder'],
+      guards: {
+        NUBASE_ALLOW_SQL_EXECUTE: true,
+        NUBASE_ALLOW_DANGEROUS_SQL: false,
+        NUBASE_ALLOW_ADMIN_WRITE: true,
+      },
+      stdioAllow: [
+        'fetch_docs',
+        'nubase_capabilities',
+        'nubase_instructions',
+        'memory_context',
+        'memory_search',
+        'memory_write',
+        'rest_select',
+        'sql_dry_run',
+        'sql_execute',
+        'db_export_schema',
+        'db_list_migrations',
+        'deploy_app',
+        'deployments_list',
+        'deployment_status',
+        'deployment_logs',
+        'storage_list_buckets',
+        'storage_list_objects',
+        'auth_get_settings',
+        'gateway_usage',
+        'gateway_usage_by_model',
+        'gateway_pricing',
+        'assets_list',
+        'assets_upload',
+        'functions_list',
+        'functions_deploy',
+        'functions_invoke',
+        'functions_logs',
+        'cron_list',
+        'cron_get',
+        'cron_create',
+        'cron_update',
+        'cron_runs',
+      ],
+      javaReadiness: 'PARTIAL',
+      javaAllow: [
+        'memorySearch',
+        'memoryContext',
+        'memoryWrite',
+        'listTables',
+        'getTableStructure',
+        'exportRlsPolicies',
+        'executeSqlDryRun',
+        'deploymentsList',
+        'deploymentStatus',
+        'deploymentLogs',
+        'storageListBuckets',
+        'assetsList',
+        'assetsUpload',
+        'functionsList',
+        'functionsCreate',
+        'functionsUpdate',
+        'functionsDeployBundle',
+        'functionsLogs',
+        'cronList',
+        'cronGet',
+        'cronCreate',
+        'cronUpdate',
+        'cronRuns',
+      ],
+    }],
+    ['nubase-release', {
+      server: 'mcp-nubase-release',
+      workers: ['nubase-release-governor'],
+      consumers: ['worker-nubase-release-governor'],
+      guards: {
+        NUBASE_ALLOW_SQL_EXECUTE: false,
+        NUBASE_ALLOW_DANGEROUS_SQL: false,
+        NUBASE_ALLOW_ADMIN_WRITE: true,
+      },
+      stdioAllow: [
+        'fetch_docs',
+        'nubase_capabilities',
+        'nubase_instructions',
+        'memory_context',
+        'memory_search',
+        'memory_write',
+        'sql_dry_run',
+        'db_export_schema',
+        'db_list_migrations',
+        'deployments_list',
+        'deployment_status',
+        'deployment_logs',
+        'deployment_rollback',
+        'app_workers_list',
+        'app_worker_status',
+        'gateway_usage',
+        'gateway_usage_daily',
+        'gateway_usage_by_model',
+        'gateway_usage_logs',
+        'gateway_pricing',
+        'assets_list',
+        'functions_list',
+        'functions_logs',
+        'cron_list',
+        'cron_get',
+        'cron_runs',
+      ],
+      javaReadiness: 'READY_AFTER_ROUTE_AND_AUTH_VERIFICATION',
+      javaAllow: [
+        'memorySearch',
+        'memoryContext',
+        'memoryWrite',
+        'listTables',
+        'getTableStructure',
+        'exportRlsPolicies',
+        'deploymentsList',
+        'deploymentStatus',
+        'deploymentLogs',
+        'deploymentRollback',
+        'appWorkersList',
+        'appWorkerStatus',
+        'assetsList',
+        'functionsList',
+        'functionsLogs',
+        'cronList',
+        'cronGet',
+        'cronRuns',
+      ],
+    }],
+  ]);
+
+  if (!Array.isArray(policy.routes) || policy.routes.length !== expectedRoutes.size) {
+    addError(policyLabel + ' must declare exactly ' + expectedRoutes.size + ' role routes');
+    return;
+  }
+  assertUnique(policy.routes.map((route) => route.name), 'MCP policy route names');
+  assertUnique(policy.routes.map((route) => route.mcpServerName), 'MCP policy server names');
+  const allWorkers = [];
+  const allConsumers = [];
+
+  for (const route of policy.routes) {
+    const label = policyLabel + ' route ' + (route.name ?? '<unnamed>');
+    assertExactKeys(
+      route,
+      [
+        'name',
+        'mcpServerName',
+        'agentTeamsWorkers',
+        'higressConsumers',
+        'stdioBridgePolicy',
+        'javaHttpPolicy',
+      ],
+      label,
+    );
+    const expected = expectedRoutes.get(route.name);
+    if (!expected) {
+      addError(label + ' is not an expected route');
+      continue;
+    }
+    expectEqual(route.mcpServerName, expected.server, label + ' mcpServerName');
+
+    const workers = Array.isArray(route.agentTeamsWorkers) ? route.agentTeamsWorkers : [];
+    const consumers = Array.isArray(route.higressConsumers) ? route.higressConsumers : [];
+    if (!Array.isArray(route.agentTeamsWorkers)) addError(label + ' agentTeamsWorkers must be an array');
+    if (!Array.isArray(route.higressConsumers)) addError(label + ' higressConsumers must be an array');
+    assertUnique(workers, label + ' agentTeamsWorkers');
+    assertUnique(consumers, label + ' higressConsumers');
+    if (!deepEqual(workers, expected.workers)) {
+      addError(label + ' agentTeamsWorkers do not match the reviewed Worker resources');
+    }
+    if (!deepEqual(consumers, expected.consumers)) {
+      addError(label + ' higressConsumers do not match the reviewed Console API consumer identities');
+    }
+    if (workers.length !== consumers.length) {
+      addError(label + ' must declare one Higress consumer for each AgentTeams Worker');
+    }
+    for (let index = 0; index < workers.length; index += 1) {
+      const expectedConsumer = expectedConsumerByWorker.get(workers[index]);
+      if (!expectedConsumer || consumers[index] !== expectedConsumer) {
+        addError(
+          label + ' consumer mapping must explicitly bind ' + (workers[index] ?? '<missing>')
+          + ' to ' + (expectedConsumer ?? '<unknown>')
+          + '; found ' + (consumers[index] ?? '<missing>'),
+        );
+      }
+    }
+    allWorkers.push(...workers);
+    allConsumers.push(...consumers);
+
+    const stdioPolicy = route.stdioBridgePolicy ?? {};
+    assertExactKeys(
+      stdioPolicy,
+      ['bridgeGuards', 'allowTools', 'denyTools'],
+      label + ' stdioBridgePolicy',
+    );
+    assertExactKeys(
+      stdioPolicy.bridgeGuards ?? {},
+      ['NUBASE_ALLOW_SQL_EXECUTE', 'NUBASE_ALLOW_DANGEROUS_SQL', 'NUBASE_ALLOW_ADMIN_WRITE'],
+      label + ' stdioBridgePolicy bridgeGuards',
+    );
+    if (!deepEqual(stdioPolicy.bridgeGuards, expected.guards)) {
+      addError(label + ' stdioBridgePolicy bridgeGuards do not match the least-privilege role');
+    }
+    const stdioPartition = validateToolPartition(
+      stdioPolicy,
+      stdioTools,
+      sensitiveByTransport.stdioBridgePolicy ?? [],
+      label + ' stdioBridgePolicy',
+      /^[a-z][a-z0-9_]*$/,
+      'snake_case stdio',
+    );
+    if (!sameStringSet(stdioPartition.allow, expected.stdioAllow)) {
+      addError(label + ' stdioBridgePolicy allowTools must match the reviewed stdio role partition');
+    }
+
+    const javaPolicy = route.javaHttpPolicy ?? {};
+    assertExactKeys(
+      javaPolicy,
+      ['readiness', 'readinessReason', 'allowTools', 'denyTools'],
+      label + ' javaHttpPolicy',
+    );
+    expectEqual(javaPolicy.readiness, expected.javaReadiness, label + ' javaHttpPolicy readiness');
+    expectPresent(javaPolicy.readinessReason, label + ' javaHttpPolicy readinessReason');
+    const javaPartition = validateToolPartition(
+      javaPolicy,
+      javaTools,
+      sensitiveByTransport.javaHttpPolicy ?? [],
+      label + ' javaHttpPolicy',
+      /^[a-z][A-Za-z0-9]*$/,
+      'exact camelCase Java',
+    );
+    if (!sameStringSet(javaPartition.allow, expected.javaAllow)) {
+      addError(label + ' javaHttpPolicy allowTools must match the reviewed Java role partition');
+    }
+    if (route.name === 'nubase-build') {
+      if (javaPolicy.readiness !== 'PARTIAL') {
+        addError(label + ' Java Builder readiness must remain PARTIAL');
+      }
+      if (javaPartition.allow.includes('executeSql') || !javaPartition.deny.includes('executeSql')) {
+        addError(label + ' Java Builder must deny executeSql');
+      }
+      if (!javaPartition.allow.includes('executeSqlDryRun')) {
+        addError(label + ' Java Builder must allow only executeSqlDryRun for SQL inspection');
+      }
+      if (!/schema apply is therefore unavailable/i.test(javaPolicy.readinessReason ?? '')) {
+        addError(label + ' Java Builder readinessReason must disclose that database schema apply is unavailable');
+      }
+    }
+  }
+
+  assertUnique(allWorkers, 'MCP policy AgentTeams Workers across routes');
+  assertUnique(allConsumers, 'MCP policy Higress consumers across routes');
+
+  if (!Array.isArray(policy.requiredToolsNotYetExposed)
+    || !policy.requiredToolsNotYetExposed.includes('deployment_promote')) {
+    addError(policyLabel + ' must disclose that deployment_promote is not yet exposed');
+  }
+  if (stdioTools.includes('deployment_promote') || javaTools.includes('deploymentPromote')) {
+    addError(policyLabel + ' marks deployment promotion missing even though a source inventory contains it');
+  }
+  summary.push(
+    'MCP policy: ' + policy.routes.length + ' role routes classify all ' + stdioTools.length
+    + ' stdio tools and ' + javaTools.length + ' Java HTTP tools',
+  );
+}
+
+async function extractStdioMcpTools() {
+  const toolSourcePath = path.join(
+    repositoryRoot,
+    'frontend',
+    'packages',
+    'mcp-bridge',
+    'src',
+    'tools.ts',
+  );
   let toolSource;
   try {
     toolSource = await readFile(toolSourcePath, 'utf8');
   } catch {
     addError('cannot read frontend/packages/mcp-bridge/src/tools.ts to validate MCP policy completeness');
-    return;
+    return [];
   }
   const tableBody = toolSource.split('const TOOL_TABLE', 2)[1]?.split('export const TOOLS', 1)[0] ?? '';
-  const allTools = [...tableBody.matchAll(/^  ([a-z][a-z0-9_]+): \{/gm)].map((match) => match[1]);
-  if (allTools.length === 0) {
+  const tools = [...tableBody.matchAll(/^  ([a-z][a-z0-9_]+): \{/gm)].map((match) => match[1]);
+  if (tools.length === 0) {
     addError('could not extract the Nubase stdio MCP tool inventory');
-    return;
+    return [];
   }
-  const allToolSet = new Set(allTools);
-  const sensitiveTools = Array.isArray(policy.deniedSensitiveTools) ? policy.deniedSensitiveTools : [];
-  assertUnique(sensitiveTools, 'deniedSensitiveTools');
+  assertUnique(tools, 'Nubase stdio MCP source tool names');
+  return tools;
+}
+
+async function extractJavaMcpTools() {
+  const toolsRoot = path.join(repositoryRoot, 'src', 'main', 'java', 'ai', 'nubase', 'mcp', 'tools');
+  let entries;
+  try {
+    entries = await readdir(toolsRoot, { withFileTypes: true });
+  } catch {
+    addError('cannot read src/main/java/ai/nubase/mcp/tools to validate Java MCP policy completeness');
+    return [];
+  }
+  const sourceFiles = entries
+    .filter((entry) => entry.isFile() && /McpTools\.java$/.test(entry.name))
+    .map((entry) => path.join(toolsRoot, entry.name))
+    .sort();
+  if (sourceFiles.length === 0) {
+    addError('could not find Java *McpTools.java sources');
+    return [];
+  }
+
+  const tools = [];
+  for (const sourcePath of sourceFiles) {
+    const source = await readFile(sourcePath, 'utf8');
+    let awaitingMethod = false;
+    let annotationLine = 0;
+    const lines = source.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (/^\s*@Tool\b/.test(line)) {
+        if (awaitingMethod) {
+          addError(path.relative(repositoryRoot, sourcePath) + ':' + annotationLine + ' @Tool has no public method');
+        }
+        awaitingMethod = true;
+        annotationLine = index + 1;
+      }
+      if (!awaitingMethod) continue;
+      const method = line.match(
+        /^\s*public\s+(?!class\b|interface\b|enum\b|record\b).*\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/,
+      );
+      if (method) {
+        tools.push(method[1]);
+        awaitingMethod = false;
+      }
+    }
+    if (awaitingMethod) {
+      addError(path.relative(repositoryRoot, sourcePath) + ':' + annotationLine + ' @Tool has no public method');
+    }
+  }
+  if (tools.length === 0) {
+    addError('could not extract the Nubase Java HTTP MCP tool inventory');
+    return [];
+  }
+  assertUnique(tools, 'Nubase Java HTTP MCP source tool names');
+  return tools;
+}
+
+function validateToolPartition(policy, inventory, sensitiveTools, label, namePattern, convention) {
+  const allow = Array.isArray(policy.allowTools) ? policy.allowTools : [];
+  const deny = Array.isArray(policy.denyTools) ? policy.denyTools : [];
+  if (!Array.isArray(policy.allowTools)) addError(label + ' allowTools must be an array');
+  if (!Array.isArray(policy.denyTools)) addError(label + ' denyTools must be an array');
+  assertUnique(allow, label + ' allowTools');
+  assertUnique(deny, label + ' denyTools');
+
+  const overlap = allow.filter((tool) => deny.includes(tool));
+  if (overlap.length) addError(label + ' allowTools and denyTools overlap: ' + overlap.join(', '));
+  const classified = [...allow, ...deny];
+  const invalidNames = classified.filter((tool) => typeof tool !== 'string' || !namePattern.test(tool));
+  if (invalidNames.length) {
+    addError(label + ' uses invalid ' + convention + ' tool names: ' + invalidNames.join(', '));
+  }
+
+  const inventorySet = new Set(inventory);
+  const union = new Set(classified);
+  const missing = inventory.filter((tool) => !union.has(tool));
+  const unknown = [...union].filter((tool) => !inventorySet.has(tool));
+  if (missing.length) addError(label + ' does not classify tools: ' + missing.join(', '));
+  if (unknown.length) addError(label + ' classifies unknown tools: ' + unknown.join(', '));
   for (const tool of sensitiveTools) {
-    if (!allToolSet.has(tool)) addError(`${relative(policyPath)} references unknown sensitive tool ${tool}`);
+    if (!deny.includes(tool)) addError(label + ' must deny sensitive tool ' + tool);
   }
+  return { allow, deny };
+}
 
-  const expectedRoutes = new Map([
-    ['nubase-read', {
-      server: 'mcp-nubase-read',
-      consumers: ['nubase-delivery-lead', 'nubase-verifier'],
-      guards: [false, false, false],
-      requiredAllow: ['sql_dry_run', 'deployment_status', 'deployment_logs'],
-      requiredDeny: ['project_keys', 'deploy_app', 'sql_execute', 'deployment_rollback'],
-    }],
-    ['nubase-build', {
-      server: 'mcp-nubase-build',
-      consumers: ['nubase-builder'],
-      guards: [true, false, true],
-      requiredAllow: ['sql_dry_run', 'sql_execute', 'deploy_app', 'deployment_status'],
-      requiredDeny: ['project_keys', 'deployment_rollback', 'functions_secrets_set'],
-    }],
-    ['nubase-release', {
-      server: 'mcp-nubase-release',
-      consumers: ['nubase-release-governor'],
-      guards: [false, false, true],
-      requiredAllow: ['deployment_status', 'deployment_logs', 'deployment_rollback'],
-      requiredDeny: ['project_keys', 'deploy_app', 'sql_execute', 'functions_secrets_set'],
-    }],
-  ]);
-
-  if (!Array.isArray(policy.routes) || policy.routes.length !== expectedRoutes.size) {
-    addError(`${relative(policyPath)} must declare exactly ${expectedRoutes.size} role routes`);
-    return;
-  }
-  assertUnique(policy.routes.map((route) => route.name), 'MCP policy route names');
-  for (const route of policy.routes) {
-    const label = `${relative(policyPath)} route ${route.name ?? '<unnamed>'}`;
-    assertExactKeys(
-      route,
-      ['name', 'mcpServerName', 'workerConsumers', 'bridgeGuards', 'allowTools', 'denyTools'],
-      label,
-    );
-    const expected = expectedRoutes.get(route.name);
-    if (!expected) {
-      addError(`${label} is not an expected route`);
-      continue;
-    }
-    expectEqual(route.mcpServerName, expected.server, `${label} mcpServerName`);
-    if (JSON.stringify([...(route.workerConsumers ?? [])].sort()) !== JSON.stringify([...expected.consumers].sort())) {
-      addError(`${label} workerConsumers do not match the reviewed role boundary`);
-    }
-    assertExactKeys(
-      route.bridgeGuards ?? {},
-      ['NUBASE_ALLOW_SQL_EXECUTE', 'NUBASE_ALLOW_DANGEROUS_SQL', 'NUBASE_ALLOW_ADMIN_WRITE'],
-      `${label} bridgeGuards`,
-    );
-    const actualGuards = [
-      route.bridgeGuards?.NUBASE_ALLOW_SQL_EXECUTE,
-      route.bridgeGuards?.NUBASE_ALLOW_DANGEROUS_SQL,
-      route.bridgeGuards?.NUBASE_ALLOW_ADMIN_WRITE,
-    ];
-    if (!deepEqual(actualGuards, expected.guards)) addError(`${label} bridgeGuards do not match the least-privilege role`);
-
-    const allow = Array.isArray(route.allowTools) ? route.allowTools : [];
-    const deny = Array.isArray(route.denyTools) ? route.denyTools : [];
-    assertUnique(allow, `${label} allowTools`);
-    assertUnique(deny, `${label} denyTools`);
-    const overlap = allow.filter((tool) => deny.includes(tool));
-    if (overlap.length) addError(`${label} allowTools and denyTools overlap: ${overlap.join(', ')}`);
-    const union = new Set([...allow, ...deny]);
-    const missing = allTools.filter((tool) => !union.has(tool));
-    const unknown = [...union].filter((tool) => !allToolSet.has(tool));
-    if (missing.length) addError(`${label} does not classify tools: ${missing.join(', ')}`);
-    if (unknown.length) addError(`${label} classifies unknown tools: ${unknown.join(', ')}`);
-    for (const tool of sensitiveTools) {
-      if (!deny.includes(tool)) addError(`${label} must deny sensitive tool ${tool}`);
-    }
-    for (const tool of expected.requiredAllow) {
-      if (!allow.includes(tool)) addError(`${label} must allow ${tool}`);
-    }
-    for (const tool of expected.requiredDeny) {
-      if (!deny.includes(tool)) addError(`${label} must deny ${tool}`);
-    }
-  }
-
-  if (!Array.isArray(policy.requiredToolsNotYetExposed)
-    || !policy.requiredToolsNotYetExposed.includes('deployment_promote')) {
-    addError(`${relative(policyPath)} must disclose that deployment_promote is not yet exposed`);
-  }
-  if (allToolSet.has('deployment_promote')) {
-    addError(`${relative(policyPath)} marks deployment_promote missing even though the stdio tool inventory contains it`);
-  }
-  summary.push(`MCP policy: ${policy.routes.length} role routes classify all ${allTools.length} stdio tools`);
+function sameStringSet(actual, expected) {
+  return actual.length === expected.length
+    && deepEqual([...actual].sort(), [...expected].sort());
 }
 
 async function validateIdentitiesAndSkills() {

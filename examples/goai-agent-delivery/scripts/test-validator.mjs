@@ -113,6 +113,54 @@ const cases = [
       await writeFile(approvalPath, `${JSON.stringify(approval, null, 2)}\n`);
     },
   },
+  {
+    name: 'unclassified Java HTTP tool',
+    expected: /javaHttpPolicy does not classify tools: memorySearch/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'nubase-read');
+      route.javaHttpPolicy.allowTools = route.javaHttpPolicy.allowTools.filter(
+        (tool) => tool !== 'memorySearch',
+      );
+    }),
+  },
+  {
+    name: 'transport tool naming mix',
+    expected: /javaHttpPolicy uses invalid exact camelCase Java tool names: memory_search/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'nubase-read');
+      route.javaHttpPolicy.allowTools.push('memory_search');
+    }),
+  },
+  {
+    name: 'stdio Builder destructive tool grant',
+    expected: /stdioBridgePolicy allowTools must match the reviewed stdio role partition/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'nubase-build');
+      route.stdioBridgePolicy.denyTools = route.stdioBridgePolicy.denyTools.filter(
+        (tool) => tool !== 'assets_delete',
+      );
+      route.stdioBridgePolicy.allowTools.push('assets_delete');
+    }),
+  },
+  {
+    name: 'Java Builder executeSql grant',
+    expected: /Java Builder must deny executeSql/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'nubase-build');
+      route.javaHttpPolicy.denyTools = route.javaHttpPolicy.denyTools.filter(
+        (tool) => tool !== 'executeSql',
+      );
+      route.javaHttpPolicy.allowTools.push('executeSql');
+    }),
+  },
+  {
+    name: 'Higress consumer without runtime prefix',
+    expected: /higressConsumers do not match the reviewed Console API consumer identities/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'nubase-build');
+      route.higressConsumers = ['nubase-builder'];
+    }),
+  },
 ];
 
 try {
@@ -142,6 +190,13 @@ async function mutateManifest(mutate) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   mutate(manifest);
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+async function mutatePolicy(mutate) {
+  const policyPath = packagePath('agentteams-v1.2.2', 'mcp-tool-policies.json');
+  const policy = JSON.parse(await readFile(policyPath, 'utf8'));
+  mutate(policy);
+  await writeFile(policyPath, `${JSON.stringify(policy, null, 2)}\n`);
 }
 
 function runValidator() {

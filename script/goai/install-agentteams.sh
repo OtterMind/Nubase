@@ -213,63 +213,255 @@ validate_yaml_contracts() {
 validate_mcp_policy() {
     ruby -rjson -e '
       policy_path = ARGV[0]
-      tools_source_path = ARGV[1]
+      stdio_source_path = ARGV[1]
+      java_tools_root = ARGV[2]
       policy = JSON.parse(File.read(policy_path))
-      tools_source = File.read(tools_source_path)
-      known_tools = tools_source.scan(/^  ([a-z][a-z0-9_]+): \{/).flatten.uniq.sort
+      stdio_source = File.read(stdio_source_path)
+      known_stdio_tools = stdio_source.scan(/^  ([a-z][a-z0-9_]+): \{/).flatten
+      abort "empty stdio MCP tool inventory" if known_stdio_tools.empty?
+      abort "duplicate stdio MCP source tool name" unless known_stdio_tools.uniq == known_stdio_tools
+
+      java_sources = Dir.glob(File.join(java_tools_root, "*McpTools.java")).sort
+      abort "empty Java MCP tool source inventory" if java_sources.empty?
+      known_java_tools = []
+      java_sources.each do |source_path|
+        awaiting_method = false
+        annotation_line = 0
+        File.readlines(source_path).each_with_index do |line, index|
+          if line.match?(/^\s*@Tool\b/)
+            abort "#{source_path}:#{annotation_line} @Tool has no public method" if awaiting_method
+            awaiting_method = true
+            annotation_line = index + 1
+          end
+          next unless awaiting_method
+
+          method = line.match(
+            /^\s*public\s+(?!class\b|interface\b|enum\b|record\b).*\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/
+          )
+          next unless method
+
+          known_java_tools << method[1]
+          awaiting_method = false
+        end
+        abort "#{source_path}:#{annotation_line} @Tool has no public method" if awaiting_method
+      end
+      abort "empty Java MCP tool inventory" if known_java_tools.empty?
+      abort "duplicate Java MCP source tool name" unless known_java_tools.uniq == known_java_tools
+
+      expected_consumer_by_worker = {
+        "nubase-delivery-lead" => "worker-nubase-delivery-lead",
+        "nubase-builder" => "worker-nubase-builder",
+        "nubase-verifier" => "worker-nubase-verifier",
+        "nubase-release-governor" => "worker-nubase-release-governor"
+      }
       expected = {
         "nubase-read" => {
           "server" => "mcp-nubase-read",
-          "consumers" => %w[nubase-delivery-lead nubase-verifier],
+          "workers" => %w[nubase-delivery-lead nubase-verifier],
+          "consumers" => %w[worker-nubase-delivery-lead worker-nubase-verifier],
           "guards" => {
             "NUBASE_ALLOW_SQL_EXECUTE" => false,
             "NUBASE_ALLOW_DANGEROUS_SQL" => false,
             "NUBASE_ALLOW_ADMIN_WRITE" => false
-          }
+          },
+          "stdio_allow" => %w[
+            fetch_docs nubase_capabilities nubase_instructions memory_context memory_search
+            rest_select sql_dry_run db_export_schema db_list_migrations deployments_list
+            deployment_status deployment_logs app_workers_list app_worker_status
+            storage_list_buckets storage_list_objects auth_get_settings gateway_usage
+            gateway_usage_daily gateway_usage_by_model gateway_usage_logs gateway_pricing
+            assets_list functions_list functions_logs cron_list cron_get cron_runs
+          ],
+          "java_readiness" => "READY_AFTER_ROUTE_AND_AUTH_VERIFICATION",
+          "java_allow" => %w[
+            memorySearch memoryContext listTables getTableStructure exportRlsPolicies
+            deploymentsList deploymentStatus deploymentLogs appWorkersList appWorkerStatus
+            storageListBuckets assetsList functionsList functionsLogs cronList cronGet cronRuns
+          ]
         },
         "nubase-build" => {
           "server" => "mcp-nubase-build",
-          "consumers" => %w[nubase-builder],
+          "workers" => %w[nubase-builder],
+          "consumers" => %w[worker-nubase-builder],
           "guards" => {
             "NUBASE_ALLOW_SQL_EXECUTE" => true,
             "NUBASE_ALLOW_DANGEROUS_SQL" => false,
             "NUBASE_ALLOW_ADMIN_WRITE" => true
-          }
+          },
+          "stdio_allow" => %w[
+            fetch_docs nubase_capabilities nubase_instructions memory_context memory_search
+            memory_write rest_select sql_dry_run sql_execute db_export_schema db_list_migrations
+            deploy_app deployments_list deployment_status deployment_logs storage_list_buckets
+            storage_list_objects auth_get_settings gateway_usage gateway_usage_by_model
+            gateway_pricing assets_list assets_upload functions_list functions_deploy
+            functions_invoke functions_logs cron_list cron_get cron_create cron_update cron_runs
+          ],
+          "java_readiness" => "PARTIAL",
+          "java_allow" => %w[
+            memorySearch memoryContext memoryWrite listTables getTableStructure exportRlsPolicies
+            executeSqlDryRun deploymentsList deploymentStatus deploymentLogs storageListBuckets
+            assetsList assetsUpload functionsList functionsCreate functionsUpdate
+            functionsDeployBundle functionsLogs cronList cronGet cronCreate cronUpdate cronRuns
+          ]
         },
         "nubase-release" => {
           "server" => "mcp-nubase-release",
-          "consumers" => %w[nubase-release-governor],
+          "workers" => %w[nubase-release-governor],
+          "consumers" => %w[worker-nubase-release-governor],
           "guards" => {
             "NUBASE_ALLOW_SQL_EXECUTE" => false,
             "NUBASE_ALLOW_DANGEROUS_SQL" => false,
             "NUBASE_ALLOW_ADMIN_WRITE" => true
-          }
+          },
+          "stdio_allow" => %w[
+            fetch_docs nubase_capabilities nubase_instructions memory_context memory_search
+            memory_write sql_dry_run db_export_schema db_list_migrations deployments_list
+            deployment_status deployment_logs deployment_rollback app_workers_list
+            app_worker_status gateway_usage gateway_usage_daily gateway_usage_by_model
+            gateway_usage_logs gateway_pricing assets_list functions_list functions_logs
+            cron_list cron_get cron_runs
+          ],
+          "java_readiness" => "READY_AFTER_ROUTE_AND_AUTH_VERIFICATION",
+          "java_allow" => %w[
+            memorySearch memoryContext memoryWrite listTables getTableStructure exportRlsPolicies
+            deploymentsList deploymentStatus deploymentLogs deploymentRollback appWorkersList
+            appWorkerStatus assetsList functionsList functionsLogs cronList cronGet cronRuns
+          ]
         }
       }
 
+      expected_policy_keys = %w[
+        schemaVersion agentTeamsVersion enforcement optionalDefenseInDepth secretInjection
+        deniedSensitiveToolsByTransport routes requiredToolsNotYetExposed
+      ]
+      abort "unexpected MCP policy fields" unless policy.keys.sort == expected_policy_keys.sort
+      abort "unexpected MCP policy schema version" unless policy["schemaVersion"] == "2.0.0"
+      abort "unexpected AgentTeams policy version" unless policy["agentTeamsVersion"] == "v1.2.2"
       abort "MCP secrets must be runtime-only" unless policy["secretInjection"] == "runtime-only"
-      abort "deployment_promote gap must stay explicit" unless (policy["requiredToolsNotYetExposed"] || []).include?("deployment_promote")
-      sensitive = policy["deniedSensitiveTools"] || []
-      abort "deniedSensitiveTools must not be empty" if sensitive.empty?
+      abort "unexpected Higress enforcement declarations" unless policy["enforcement"] == [
+        "Higress MCP server allowTools",
+        "Higress consumer authorization"
+      ]
+      abort "deployment_promote gap must stay explicit" unless policy["requiredToolsNotYetExposed"] == [
+        "deployment_promote"
+      ]
+
+      sensitive_by_transport = policy["deniedSensitiveToolsByTransport"] || {}
+      abort "unexpected sensitive tool transport fields" unless sensitive_by_transport.keys.sort == %w[
+        javaHttpPolicy stdioBridgePolicy
+      ].sort
+      stdio_sensitive = sensitive_by_transport["stdioBridgePolicy"] || []
+      java_sensitive = sensitive_by_transport["javaHttpPolicy"] || []
+      abort "empty stdio sensitive tool inventory" if stdio_sensitive.empty?
+      abort "empty Java sensitive tool inventory" if java_sensitive.empty?
+      abort "duplicate stdio sensitive tool" unless stdio_sensitive.uniq == stdio_sensitive
+      abort "duplicate Java sensitive tool" unless java_sensitive.uniq == java_sensitive
+      abort "unknown stdio sensitive tool" unless (stdio_sensitive - known_stdio_tools).empty?
+      abort "unknown Java sensitive tool" unless (java_sensitive - known_java_tools).empty?
+
+      validate_partition = lambda do |transport_policy, known_tools, sensitive_tools, route_name, transport_name, name_pattern|
+        allow_tools = transport_policy["allowTools"] || []
+        deny_tools = transport_policy["denyTools"] || []
+        abort "empty allowTools for #{route_name}/#{transport_name}" if allow_tools.empty?
+        abort "duplicate allowTools for #{route_name}/#{transport_name}" unless allow_tools.uniq == allow_tools
+        abort "duplicate denyTools for #{route_name}/#{transport_name}" unless deny_tools.uniq == deny_tools
+        abort "allowTools and denyTools overlap for #{route_name}/#{transport_name}" unless (allow_tools & deny_tools).empty?
+        abort "invalid tool naming for #{route_name}/#{transport_name}" unless (allow_tools | deny_tools).all? {
+          |tool| tool.is_a?(String) && tool.match?(name_pattern)
+        }
+        abort "unknown tool in #{route_name}/#{transport_name}" unless ((allow_tools | deny_tools) - known_tools).empty?
+        abort "incomplete exact tool policy for #{route_name}/#{transport_name}" unless (
+          allow_tools | deny_tools
+        ).sort == known_tools.sort
+        abort "sensitive tool not denied for #{route_name}/#{transport_name}" unless (
+          sensitive_tools - deny_tools
+        ).empty?
+      end
+
       routes = policy["routes"] || []
       abort "unexpected MCP policy routes" unless routes.map { |route| route["name"] }.sort == expected.keys.sort
+      all_workers = []
+      all_consumers = []
 
       routes.each do |route|
         route_name = route["name"]
-        allow_tools = route["allowTools"] || []
-        deny_tools = route["denyTools"] || []
-        abort "empty allowTools for #{route_name}" if allow_tools.empty?
-        abort "duplicate allowTools for #{route_name}" unless allow_tools.uniq == allow_tools
-        abort "duplicate denyTools for #{route_name}" unless deny_tools.uniq == deny_tools
-        abort "allowTools and denyTools overlap for #{route_name}" unless (allow_tools & deny_tools).empty?
-        abort "unknown tool in #{route_name}" unless ((allow_tools | deny_tools) - known_tools).empty?
-        abort "incomplete exact tool policy for #{route_name}" unless (allow_tools | deny_tools).sort == known_tools
-        abort "sensitive tool not denied for #{route_name}" unless (sensitive - deny_tools).empty?
-        abort "unexpected MCP server name for #{route_name}" unless route["mcpServerName"] == expected.fetch(route_name).fetch("server")
-        abort "unexpected consumers for #{route_name}" unless route["workerConsumers"] == expected.fetch(route_name).fetch("consumers")
-        abort "unexpected bridge guards for #{route_name}" unless route["bridgeGuards"] == expected.fetch(route_name).fetch("guards")
+        route_expected = expected.fetch(route_name)
+        abort "unexpected MCP route fields for #{route_name}" unless route.keys.sort == %w[
+          name mcpServerName agentTeamsWorkers higressConsumers stdioBridgePolicy javaHttpPolicy
+        ].sort
+        abort "unexpected MCP server name for #{route_name}" unless route["mcpServerName"] == route_expected["server"]
+
+        workers = route["agentTeamsWorkers"] || []
+        consumers = route["higressConsumers"] || []
+        abort "unexpected AgentTeams Workers for #{route_name}" unless workers == route_expected["workers"]
+        abort "unexpected Higress consumers for #{route_name}" unless consumers == route_expected["consumers"]
+        abort "Worker/consumer cardinality mismatch for #{route_name}" unless workers.length == consumers.length
+        workers.zip(consumers).each do |worker, consumer|
+          expected_consumer = expected_consumer_by_worker.fetch(worker)
+          abort "unexpected Worker/consumer mapping for #{route_name}" unless consumer == expected_consumer
+        end
+        all_workers.concat(workers)
+        all_consumers.concat(consumers)
+
+        stdio_policy = route["stdioBridgePolicy"] || {}
+        abort "unexpected stdioBridgePolicy fields for #{route_name}" unless stdio_policy.keys.sort == %w[
+          bridgeGuards allowTools denyTools
+        ].sort
+        abort "unexpected stdio bridge guards for #{route_name}" unless (
+          stdio_policy["bridgeGuards"] == route_expected["guards"]
+        )
+        validate_partition.call(
+          stdio_policy,
+          known_stdio_tools,
+          stdio_sensitive,
+          route_name,
+          "stdioBridgePolicy",
+          /\A[a-z][a-z0-9_]*\z/
+        )
+        abort "unexpected stdio allowTools for #{route_name}" unless (
+          stdio_policy["allowTools"].sort == route_expected["stdio_allow"].sort
+        )
+
+        java_policy = route["javaHttpPolicy"] || {}
+        abort "unexpected javaHttpPolicy fields for #{route_name}" unless java_policy.keys.sort == %w[
+          readiness readinessReason allowTools denyTools
+        ].sort
+        abort "unexpected Java readiness for #{route_name}" unless (
+          java_policy["readiness"] == route_expected["java_readiness"]
+        )
+        abort "missing Java readiness reason for #{route_name}" if java_policy["readinessReason"].to_s.strip.empty?
+        validate_partition.call(
+          java_policy,
+          known_java_tools,
+          java_sensitive,
+          route_name,
+          "javaHttpPolicy",
+          /\A[a-z][A-Za-z0-9]*\z/
+        )
+        abort "unexpected Java allowTools for #{route_name}" unless (
+          java_policy["allowTools"].sort == route_expected["java_allow"].sort
+        )
+
+        next unless route_name == "nubase-build"
+
+        abort "Java Builder readiness must remain PARTIAL" unless java_policy["readiness"] == "PARTIAL"
+        abort "Java Builder must deny executeSql" unless (
+          java_policy["denyTools"].include?("executeSql") && !java_policy["allowTools"].include?("executeSql")
+        )
+        abort "Java Builder must allow executeSqlDryRun" unless java_policy["allowTools"].include?(
+          "executeSqlDryRun"
+        )
+        abort "Java Builder must disclose unavailable schema apply" unless java_policy["readinessReason"].match?(
+          /schema apply is therefore unavailable/i
+        )
       end
-    ' "${MCP_POLICY}" "${REPO_ROOT}/frontend/packages/mcp-bridge/src/tools.ts"
+
+      abort "duplicate AgentTeams Worker route assignment" unless all_workers.uniq == all_workers
+      abort "duplicate Higress consumer route assignment" unless all_consumers.uniq == all_consumers
+    ' \
+        "$MCP_POLICY" \
+        "$REPO_ROOT/frontend/packages/mcp-bridge/src/tools.ts" \
+        "$REPO_ROOT/src/main/java/ai/nubase/mcp/tools"
 }
 
 detect_cli() {

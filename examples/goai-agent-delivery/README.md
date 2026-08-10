@@ -29,7 +29,7 @@ node examples/goai-agent-delivery/scripts/test-validator.mjs
 node examples/goai-agent-delivery/scripts/mcp-smoke.mjs
 ```
 
-These checks do not read `.env`, `.nubase`, the HiClaw workspace or a real Nubase project key. The smoke test starts the stdio bridge with an isolated environment and performs local SQL risk classification only.
+These checks do not read `.env`, `.nubase`, the HiClaw workspace or a real Nubase project key. The validator extracts all 65 stdio tools and all 43 Java `@Tool` methods from source, then requires every role policy to classify its transport inventory exactly. The smoke test starts the stdio bridge with an isolated environment and performs local SQL risk classification only.
 
 ## AgentTeams Runtime
 
@@ -50,7 +50,13 @@ bash script/goai/install-agentteams.sh \
 
 The installer rejects any `/host-share` that does not exactly match the explicit directory, is outside `evidence/`, contains symlinks, or contains common credential material. Mount the dedicated demo directory read-only whenever the runtime permits it.
 
-An applied Team does not prove MCP authorization. Before assigning a task, separately verify Team/Worker readiness, all four persistent and runtime Skill tree digests, exact allow/deny discovery, consumer authorization and a sanitized trace carrying the same `taskId`, `runId` and `agentId`.
+An applied Team does not prove MCP authorization. The local Java HTTP routes must use each route's `javaHttpPolicy.allowTools` as the top-level Higress MCP `allowTools` field; it is not nested under `server`. A separately deployed stdio wrapper must instead use `stdioBridgePolicy` and its bridge guards. The transports use different tool names and their policies are not interchangeable.
+
+HiClaw v1.1.2 also requires a top-level `tools: []` compatibility marker in proxy `rawConfigurations`; without the literal `tools:` field its Console SDK saves the MCP plugin instance as disabled. The empty marker does not define the proxied tools. The top-level `allowTools` list remains authoritative, and `tools/list` must equal it exactly after the route is applied.
+
+For Console API consumer authorization, use the policy's `higressConsumers` values (`worker-nubase-delivery-lead`, `worker-nubase-builder`, `worker-nubase-verifier`, and `worker-nubase-release-governor`). The unprefixed `agentTeamsWorkers` values are manifest resource names, not Higress authorization identities. Before assigning a task, separately verify Team/Worker readiness, all four persistent and runtime Skill tree digests, exact allow/deny discovery, consumer authorization and a sanitized trace carrying the same `taskId`, `runId` and `agentId`.
+
+The Java Builder route remains `PARTIAL`: `executeSql` is denied because its current server implementation reports dangerous SQL without enforcing a block, and `executeSqlDryRun` performs transactional execution followed by rollback rather than pure parsing. Database schema apply is not a supported contest claim; use only a dedicated disposable sandbox.
 
 ## Evidence and Safety
 
