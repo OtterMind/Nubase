@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nubase.ai/schemas/goai/approval.schema.json",
+  "title": "GOAI Human Approval Record",
+  "type": "object",
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "decision": {
+          "const": "pending"
+        }
+      },
+      "allOf": [
+        { "not": { "required": ["decidedBy"] } },
+        { "not": { "required": ["decidedAt"] } },
+        { "not": { "required": ["reason"] } }
+      ]
+    },
+    {
+      "properties": {
+        "decision": {
+          "enum": ["approved", "rejected"]
+        }
+      },
+      "required": ["decidedBy", "decidedAt", "reason"]
+    }
+  ],
+  "required": [
+    "schemaVersion",
+    "approvalId",
+    "runId",
+    "requestedAt",
+    "requestedBy",
+    "riskLevel",
+    "humanApprovalRequired",
+    "decision",
+    "requestedAction",
+    "policyChecks",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "approvalId": {
+      "type": "string",
+      "pattern": "^approval-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "requestedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "requestedBy": {
+      "const": "release-governor"
+    },
+    "riskLevel": {
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "humanApprovalRequired": {
+      "const": true
+    },
+    "decision": {
+      "enum": ["pending", "approved", "rejected"]
+    },
+    "requestedAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "target",
+        "manifest",
+        "manifestDigest",
+        "verificationReport",
+        "verificationDigest"
+      ],
+      "properties": {
+        "type": {
+          "enum": ["release_decision", "rollback"]
+        },
+        "target": {
+          "enum": ["sandbox", "staging"]
+        },
+        "manifest": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]+\\.json$"
+        },
+        "manifestDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "verificationReport": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]+\\.json$"
+        },
+        "verificationDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "policyChecks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "status": {
+            "enum": ["passed", "failed"]
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9._/-]+$"
+      }
+    },
+    "decidedBy": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{2,63}$"
+    },
+    "decidedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    }
+  }
+}

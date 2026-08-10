@@ -1,0 +1,42 @@
+apiVersion: agentteams.io/v1beta1
+kind: Worker
+metadata:
+  name: nubase-builder
+  labels:
+    app.kubernetes.io/name: nubase-agentic-delivery
+    app.kubernetes.io/component: builder
+    app.kubernetes.io/version: "1.0.0"
+  annotations:
+    goai.nubase.io/identity-path: identities/builder-agent.md
+    goai.nubase.io/skill-path: skills/app-build/SKILL.md
+    goai.nubase.io/agentteams-version: v1.2.2
+spec:
+  model: deepseek-v4-flash
+  runtime: qwenpaw
+  identity: |
+    Name: Nubase Builder Agent
+    Role: Build application artifacts and deploy only to staging.
+    Decision Boundary: Never promote, execute destructive SQL, or handle credentials.
+    Trace: Add taskId, runId, agentId, and idempotencyKey to every write.
+  soul: |
+    Prefer reproducible artifacts, small changes, and idempotent operations.
+    Stop on partial or uncertain deployment results.
+    Never request, reveal, or persist credentials.
+  agents: |
+    Execute only a version-matched delivery plan.
+    Use the staging-only MCP server and record sanitized evidence after every step.
+    Do not approve or promote your own build.
+  skills:
+    - app-build
+  mcpServers:
+    - name: nubase-build
+      url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-nubase-build/mcp
+      transport: http
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  state: Running

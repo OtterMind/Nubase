@@ -11,6 +11,14 @@ COPY src ./src
 # the UI (/studio) on one port — so the deployment works at any server IP/domain with no
 # cross-origin "localhost" problem and no separate frontend process.
 COPY frontend ./frontend
+# Fail closed if local configuration or credential files bypass .dockerignore.
+RUN ! find src frontend -type f \( \
+      -name '.env' -o -name '.env.*' -o \
+      -name 'application-dev.yml' -o -name 'application-local.yml' -o \
+      -name 'application-prod.yml' -o -name 'application-secrets.yml' -o \
+      -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' -o \
+      -name '*.jks' -o -name '*.keystore' \
+    \) -print -quit | grep -q .
 RUN --mount=type=cache,target=/root/.m2 \
     mvn -B -Pwith-frontend clean package -Dmaven.test.skip=true
 
@@ -34,19 +42,22 @@ WORKDIR /opt/nubase
 COPY --from=backend-builder /workspace/target/*.jar /opt/nubase/backend/app.jar
 COPY docker/all-in-one/entrypoint.sh /usr/local/bin/nubase-entrypoint
 
-RUN chmod +x /usr/local/bin/nubase-entrypoint && \
-    mkdir -p /data/postgres /data/redis /data/secrets && \
-    chown -R postgres:postgres /data/postgres
+RUN groupadd --system nubase && \
+    useradd --system --gid nubase --home-dir /nonexistent --shell /usr/sbin/nologin nubase && \
+    chmod +x /usr/local/bin/nubase-entrypoint && \
+    mkdir -p /data/postgres /data/redis /data/secrets /opt/nubase/logs && \
+    chown -R postgres:postgres /data/postgres && \
+    chown -R nubase:nubase /opt/nubase/backend /opt/nubase/logs
 
 ENV PGDATA=/data/postgres \
     POSTGRES_HOST=127.0.0.1 \
     POSTGRES_PORT=5432 \
     POSTGRES_DB=postgrest_metadata \
     POSTGRES_USER=postgres \
-    POSTGRES_PASSWORD=postgres \
     REDIS_HOST=127.0.0.1 \
     REDIS_PORT=6379 \
     NUBASE_CACHE_TYPE=caffeine \
+    NUBASE_POSTGRES_EXTERNAL_ACCESS=false \
     SERVER_PORT=9999
 
 # This batteries-included image ships without SMTP, so email OTP codes can't be delivered —
@@ -56,10 +67,11 @@ ENV PGDATA=/data/postgres \
 ENV NUBASE_PLATFORM_EMAIL_VERIFICATION_ENABLED=false
 
 VOLUME ["/data"]
-# Single app port: 9999 serves both the API and the Studio UI (/studio). 5432 = Postgres.
-EXPOSE 9999 5432
+# The API and Studio are public on 9999. Postgres remains internal by default.
+EXPOSE 9999
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=5 \
-  CMD nc -z 127.0.0.1 9999 && curl -fsS -o /dev/null http://127.0.0.1:9999/studio/ || exit 1
+  CMD curl -fsS -o /dev/null http://127.0.0.1:9999/auth/v1/health && \
+      curl -fsS -o /dev/null http://127.0.0.1:9999/studio/ || exit 1
 
 ENTRYPOINT ["dumb-init", "--", "nubase-entrypoint"]

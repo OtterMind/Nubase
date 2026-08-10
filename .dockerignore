@@ -4,6 +4,23 @@
 .vscode
 .claude
 .mcp.json
+.nubase
+**/.nubase
+
+# Local configuration and credentials must never enter the Docker build context.
+**/.env
+**/.env.*
+**/application-dev.yml
+**/application-local.yml
+**/application-prod.yml
+**/application-secrets.yml
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+cloudflare/functions-dispatcher/wrangler.toml
 
 # Maven build output only — must NOT use **/target, which would also drop the
 # Java source package src/main/java/ai/nubase/cron/target (breaks the backend build).
@@ -31,5 +48,8 @@ frontend/packages/mcp-bridge/*.tgz
 script/deploy/nubase.env
 script/deploy/init_apisix.sh
 script/deploy/rolling-deploy.sh
+script/deploy/www-deploy.sh
+script/deploy/apisix-www-routes.sh
+script/deploy/nubase-www.service
 
 docs

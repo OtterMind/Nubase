@@ -577,6 +577,15 @@ export const TOOLS: ToolDefinition[] = Object.entries(TOOL_TABLE).map(([name, en
   inputSchema: entry.inputSchema,
 }));
 
+export function toolsForConfig(config: BridgeConfig): ToolDefinition[] {
+  return TOOLS.filter((tool) => isToolAllowed(tool.name, config));
+}
+
+export function isToolAllowed(name: string, config: BridgeConfig): boolean {
+  if (config.deniedTools?.includes(name)) return false;
+  return !config.allowedTools || config.allowedTools.includes(name);
+}
+
 export async function callTool(
   name: string,
   args: Record<string, unknown>,
@@ -585,6 +594,9 @@ export async function callTool(
 ) {
   const entry = TOOL_TABLE[name];
   if (!entry) throw new Error(`Unknown tool: ${name}`);
+  if (!isToolAllowed(name, config)) {
+    throw new Error(`Tool is not allowed by the active Nubase tool policy: ${name}`);
+  }
   return entry.handler(args, config, client);
 }
 

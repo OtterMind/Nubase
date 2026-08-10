@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nubase.ai/schemas/goai/trace-event.schema.json",
+  "title": "GOAI Agent Delivery Trace Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "runId",
+    "timestamp",
+    "sequence",
+    "agentId",
+    "eventType",
+    "status",
+    "correlation",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "eventId": {
+      "type": "string",
+      "pattern": "^event-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "agentId": {
+      "enum": [
+        "delivery-lead",
+        "builder-agent",
+        "verifier-agent",
+        "release-governor",
+        "system"
+      ]
+    },
+    "eventType": {
+      "enum": [
+        "task.received",
+        "task.decomposed",
+        "tool.requested",
+        "tool.completed",
+        "verification.completed",
+        "approval.requested",
+        "approval.decided",
+        "deployment.completed",
+        "rollback.completed",
+        "memory.written",
+        "dry_run.completed"
+      ]
+    },
+    "status": {
+      "enum": ["pending", "running", "succeeded", "failed", "approved", "rejected", "simulated"]
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId"],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "pattern": "^task-[a-z0-9][a-z0-9-]{5,63}$"
+        },
+        "deploymentId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]{8,64}$"
+        },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^approval-[a-z0-9][a-z0-9-]{5,63}$"
+        },
+        "parentEventId": {
+          "type": "string",
+          "pattern": "^event-[a-z0-9][a-z0-9-]{5,63}$"
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "artifact": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "toolName": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{1,63}$"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "result": {
+          "enum": ["passed", "failed", "approved", "rejected", "simulated"]
+        },
+        "risk": {
+          "enum": ["read", "write_safe", "write_schema", "dangerous"]
+        },
+        "decision": {
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._/-]+$"
+          }
+        }
+      }
+    }
+  }
+}

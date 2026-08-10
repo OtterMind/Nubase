@@ -1,0 +1,7 @@
+{
+  "name": "goai-delivery-api",
+  "slug": "goai-delivery-api",
+  "entrypoint": "index.js",
+  "verifyJwt": true,
+  "privileged": false
+}

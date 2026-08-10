@@ -1,0 +1,156 @@
+name: GOAI contest package
+
+on:
+  push:
+    branches:
+      - GOAI_dev
+    paths:
+      - '.dockerignore'
+      - '.github/workflows/goai-contest.yml'
+      - '.github/workflows/secret-scan.yml'
+      - 'Dockerfile'
+      - 'Dockerfile.all-in-one'
+      - 'docker/all-in-one/entrypoint.sh'
+      - 'examples/goai-agent-delivery/**'
+      - 'frontend/packages/mcp-bridge/**'
+      - 'frontend/pnpm-lock.yaml'
+      - 'pom.xml'
+      - 'script/goai/**'
+      - 'src/main/java/ai/nubase/agent/**'
+      - 'src/main/java/ai/nubase/auth/controller/PostgrestController.java'
+      - 'src/main/java/ai/nubase/common/config/GlobalCorsConfig.java'
+      - 'src/main/java/ai/nubase/deploy/**'
+      - 'src/main/java/ai/nubase/mcp/**'
+      - 'src/main/resources/application.yml'
+      - 'src/test/java/ai/nubase/agent/**'
+      - 'src/test/java/ai/nubase/auth/controller/PostgrestControllerTest.java'
+      - 'src/test/java/ai/nubase/common/config/GlobalCorsConfigTest.java'
+      - 'src/test/java/ai/nubase/deploy/**'
+      - 'src/test/java/ai/nubase/mcp/**'
+  pull_request:
+    paths:
+      - '.dockerignore'
+      - '.github/workflows/goai-contest.yml'
+      - '.github/workflows/secret-scan.yml'
+      - 'Dockerfile'
+      - 'Dockerfile.all-in-one'
+      - 'docker/all-in-one/entrypoint.sh'
+      - 'examples/goai-agent-delivery/**'
+      - 'frontend/packages/mcp-bridge/**'
+      - 'frontend/pnpm-lock.yaml'
+      - 'pom.xml'
+      - 'script/goai/**'
+      - 'src/main/java/ai/nubase/agent/**'
+      - 'src/main/java/ai/nubase/auth/controller/PostgrestController.java'
+      - 'src/main/java/ai/nubase/common/config/GlobalCorsConfig.java'
+      - 'src/main/java/ai/nubase/deploy/**'
+      - 'src/main/java/ai/nubase/mcp/**'
+      - 'src/main/resources/application.yml'
+      - 'src/test/java/ai/nubase/agent/**'
+      - 'src/test/java/ai/nubase/auth/controller/PostgrestControllerTest.java'
+      - 'src/test/java/ai/nubase/common/config/GlobalCorsConfigTest.java'
+      - 'src/test/java/ai/nubase/deploy/**'
+      - 'src/test/java/ai/nubase/mcp/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: goai-contest-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate contest package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17.0.12+7'
+          cache: maven
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and test Nubase CLI
+        working-directory: frontend
+        run: |
+          pnpm --filter nubase_cli build
+          pnpm --filter nubase_cli test
+
+      - name: Validate contest package
+        run: node examples/goai-agent-delivery/scripts/validate-package.mjs
+
+      - name: Run validator negative cases
+        run: node examples/goai-agent-delivery/scripts/test-validator.mjs
+
+      - name: Run credential-free stdio MCP smoke
+        run: node examples/goai-agent-delivery/scripts/mcp-smoke.mjs
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate shell and Docker build definitions
+        run: |
+          bash -n docker/all-in-one/entrypoint.sh
+          bash -n script/goai/install-agentteams.sh
+          bash script/goai/test-install-agentteams.sh
+          docker buildx build --check -f Dockerfile .
+          docker buildx build --check -f Dockerfile.all-in-one .
+
+      - name: Run focused Java tests
+        run: >-
+          mvn -q
+          -Dtest=SqlRiskClassifierTest,DatabaseMcpToolsTest,McpConfigTest,RemoteAdminMcpToolsTest,AgentMetadataControllerTest,AppDeploymentAdminControllerTest,AppDeploymentServiceTest,AppDeploymentRollbackServiceTest,GlobalCorsConfigTest,PostgrestControllerTest
+          test
+
+      - name: Install gitleaks
+        run: |
+          VERSION=8.30.1
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan Git history for secrets
+        run: bash script/check-secrets.sh
+
+      - name: Package Git-tracked contest fixtures
+        run: |
+          git archive \
+            --format=tar.gz \
+            --output=/tmp/goai-contest-fixtures.tar.gz \
+            HEAD \
+            examples/goai-agent-delivery/contracts \
+            examples/goai-agent-delivery/scenario \
+            examples/goai-agent-delivery/evidence
+
+      - name: Upload reviewed fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: goai-contest-fixtures-${{ github.sha }}
+          path: /tmp/goai-contest-fixtures.tar.gz
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,42 @@
+apiVersion: agentteams.io/v1beta1
+kind: Worker
+metadata:
+  name: nubase-verifier
+  labels:
+    app.kubernetes.io/name: nubase-agentic-delivery
+    app.kubernetes.io/component: verifier
+    app.kubernetes.io/version: "1.0.0"
+  annotations:
+    goai.nubase.io/identity-path: identities/verifier-agent.md
+    goai.nubase.io/skill-path: skills/release-verify/SKILL.md
+    goai.nubase.io/agentteams-version: v1.2.2
+spec:
+  model: deepseek-v4-flash
+  runtime: qwenpaw
+  identity: |
+    Name: Nubase Verifier Agent
+    Role: Independently verify staged releases without modifying the target.
+    Decision Boundary: Read-only verification; never fix, approve, or promote.
+    Trace: Link every result to taskId, runId, agentId, and acceptance criterion.
+  soul: |
+    Be independent, adversarial, and evidence-driven.
+    Fail closed when evidence is incomplete or results are unstable.
+    Never request, reveal, or persist credentials.
+  agents: |
+    Verify functionality, authorization, RLS, tenant isolation, and trace continuity.
+    Preserve failures and report PASS, FAIL, or BLOCKED without changing the target.
+    Store only minimal sanitized evidence.
+  skills:
+    - release-verify
+  mcpServers:
+    - name: nubase-read
+      url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-nubase-read/mcp
+      transport: http
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  state: Running

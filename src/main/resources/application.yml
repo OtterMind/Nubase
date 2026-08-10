@@ -119,6 +119,12 @@ zenmux:
 
 # Supabase Auth configuration
 nubase:
+  # Browser API calls are header-authenticated, so wildcard origins remain compatible without
+  # credentials. Credentialed cross-origin requests require an explicit origin allowlist.
+  cors:
+    allowed-origin-patterns: ${NUBASE_CORS_ALLOWED_ORIGIN_PATTERNS:*}
+    allow-credentials: ${NUBASE_CORS_ALLOW_CREDENTIALS:false}
+
   # Cache backend: caffeine (in-process, default — no external dependency) or redis
   # (distributed, required for multi-node deployments where caches must stay coherent).
   # Per-region TTL configured in MultiDatabaseConfiguration; Redis connection details

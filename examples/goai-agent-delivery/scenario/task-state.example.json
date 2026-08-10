@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "1.0",
+  "taskId": "task-goai-demo-001",
+  "runId": "run-goai-dry-001",
+  "sequence": 5,
+  "version": 5,
+  "phase": "approved",
+  "history": [
+    {
+      "sequence": 1,
+      "version": 1,
+      "phase": "planned",
+      "updatedAt": "2026-08-10T04:00:30.000Z",
+      "updatedBy": "delivery-lead"
+    },
+    {
+      "sequence": 2,
+      "version": 2,
+      "phase": "building",
+      "updatedAt": "2026-08-10T04:01:00.000Z",
+      "updatedBy": "builder-agent"
+    },
+    {
+      "sequence": 3,
+      "version": 3,
+      "phase": "verifying",
+      "updatedAt": "2026-08-10T04:03:00.000Z",
+      "updatedBy": "verifier-agent"
+    },
+    {
+      "sequence": 4,
+      "version": 4,
+      "phase": "awaiting_approval",
+      "updatedAt": "2026-08-10T04:04:00.000Z",
+      "updatedBy": "release-governor"
+    },
+    {
+      "sequence": 5,
+      "version": 5,
+      "phase": "approved",
+      "updatedAt": "2026-08-10T04:05:00.000Z",
+      "updatedBy": "human-reviewer"
+    }
+  ],
+  "assignments": [
+    {
+      "agentId": "delivery-lead",
+      "role": "plan",
+      "status": "completed",
+      "inputVersion": 1
+    },
+    {
+      "agentId": "builder-agent",
+      "role": "build",
+      "status": "completed",
+      "inputVersion": 2
+    },
+    {
+      "agentId": "verifier-agent",
+      "role": "verify",
+      "status": "completed",
+      "inputVersion": 3
+    },
+    {
+      "agentId": "release-governor",
+      "role": "govern",
+      "status": "completed",
+      "inputVersion": 4
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "deployment-manifest",
+      "path": "nubase.deploy.json",
+      "digest": "sha256:f1afbae6edd2e772dda455b280c4589c0eaa92a7cd89f5db17b42d4a0d72431c",
+      "producedBy": "builder-agent",
+      "version": 2
+    },
+    {
+      "name": "database-schema",
+      "path": "schema.sql",
+      "digest": "sha256:169de032b95e254a0cd25ff86250685d7d8d77f8b233a24819cb10532528247d",
+      "producedBy": "builder-agent",
+      "version": 2
+    },
+    {
+      "name": "function-source",
+      "path": "functions/api/index.js",
+      "digest": "sha256:1961240412b0d7ff90259c1f9425b5f31fb19d40520b574d8202ad3864b70620",
+      "producedBy": "builder-agent",
+      "version": 2
+    },
+    {
+      "name": "verification-report",
+      "path": "verification-report.example.json",
+      "digest": "sha256:638af19af85f0d916102377cb9d8a18129fedd986f04fd73d93d822c48e4512d",
+      "producedBy": "verifier-agent",
+      "version": 3
+    }
+  ],
+  "approval": {
+    "required": true,
+    "status": "approved",
+    "approvalId": "approval-goai-demo-001",
+    "requestedAt": "2026-08-10T04:04:00.000Z",
+    "decidedAt": "2026-08-10T04:05:00.000Z",
+    "decidedBy": "human-reviewer",
+    "version": 5
+  }
+}

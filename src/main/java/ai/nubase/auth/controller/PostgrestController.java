@@ -29,7 +29,6 @@ import org.springframework.web.bind.annotation.*;
 import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 
 /**
  * PostgREST direct invocation controller.
@@ -113,11 +112,7 @@ public class PostgrestController {
     }
 
     @RequestMapping(value = "/**", method = RequestMethod.OPTIONS)
-    public ResponseEntity<?> handleOptions(HttpServletResponse response) {
-        response.setHeader("Access-Control-Allow-Origin", "*");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Prefer, Range, apikey");
-        response.setHeader("Access-Control-Expose-Headers", "Content-Range, Content-Location");
+    public ResponseEntity<?> handleOptions() {
         return ResponseEntity.ok().build();
     }
 
@@ -389,9 +384,6 @@ public class PostgrestController {
             ApiRequest apiRequest,
             HttpServletResponse response
     ) throws IOException {
-
-        // Set CORS headers
-        response.setHeader("Access-Control-Allow-Origin", "*");
 
         // Set the Content-Range header for pagination
         if (apiRequest.getRange() != null) {

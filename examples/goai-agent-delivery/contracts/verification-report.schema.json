@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nubase.ai/schemas/goai/verification-report.schema.json",
+  "title": "GOAI Independent Verification Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "reportId",
+    "taskId",
+    "runId",
+    "verifiedAt",
+    "verifiedBy",
+    "result",
+    "manifest",
+    "checks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "reportId": {
+      "type": "string",
+      "pattern": "^verification-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^task-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "verifiedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verifiedBy": {
+      "const": "verifier-agent"
+    },
+    "result": {
+      "enum": ["passed", "failed", "blocked"]
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "digest"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]+\\.json$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "evidence"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "status": {
+            "enum": ["passed", "failed", "blocked"]
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._/-]+$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

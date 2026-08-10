@@ -18,6 +18,8 @@ export interface BridgeConfig {
   allowSqlExecute: boolean;
   allowDangerousSql: boolean;
   allowAdminWrite: boolean;
+  allowedTools?: string[];
+  deniedTools?: string[];
   recordMigrations?: boolean;
 }
 
@@ -38,6 +40,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
     allowSqlExecute: truthy(env.NUBASE_ALLOW_SQL_EXECUTE),
     allowDangerousSql: truthy(env.NUBASE_ALLOW_DANGEROUS_SQL),
     allowAdminWrite: truthy(env.NUBASE_ALLOW_ADMIN_WRITE),
+    allowedTools: csvList(env.NUBASE_ALLOWED_TOOLS),
+    deniedTools: csvList(env.NUBASE_DENIED_TOOLS),
     // On by default; set NUBASE_RECORD_MIGRATIONS=false to disable the audit trail.
     recordMigrations: !explicitlyFalse(env.NUBASE_RECORD_MIGRATIONS),
   };
@@ -77,4 +81,12 @@ function truthy(value: string | undefined) {
 
 function explicitlyFalse(value: string | undefined) {
   return ['0', 'false', 'no', 'off'].includes((value || '').toLowerCase());
+}
+
+function csvList(value: string | undefined) {
+  const items = (value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? [...new Set(items)] : undefined;
 }

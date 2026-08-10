@@ -1,0 +1,5 @@
+# Run-specific evidence may contain operational metadata and must be reviewed
+# before it is deliberately promoted into a sanitized fixture.
+*
+!.gitignore
+!README.md

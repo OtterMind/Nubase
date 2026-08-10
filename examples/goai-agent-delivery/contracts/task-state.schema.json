@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nubase.ai/schemas/goai/task-state.schema.json",
+  "title": "GOAI AgentTeams Shared Task State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "runId",
+    "sequence",
+    "version",
+    "phase",
+    "history",
+    "assignments",
+    "artifacts",
+    "approval"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^task-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[a-z0-9][a-z0-9-]{5,63}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "phase": {
+      "enum": [
+        "intake",
+        "planned",
+        "building",
+        "verifying",
+        "awaiting_approval",
+        "approved",
+        "rejected",
+        "rollback_required",
+        "rolled_back",
+        "completed",
+        "blocked"
+      ]
+    },
+    "history": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sequence", "version", "phase", "updatedAt", "updatedBy"],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "phase": {
+            "enum": [
+              "intake",
+              "planned",
+              "building",
+              "verifying",
+              "awaiting_approval",
+              "approved",
+              "rejected",
+              "rollback_required",
+              "rolled_back",
+              "completed",
+              "blocked"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "enum": [
+              "delivery-lead",
+              "builder-agent",
+              "verifier-agent",
+              "release-governor",
+              "human-reviewer",
+              "system"
+            ]
+          }
+        }
+      }
+    },
+    "assignments": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agentId", "role", "status", "inputVersion"],
+        "properties": {
+          "agentId": {
+            "enum": [
+              "delivery-lead",
+              "builder-agent",
+              "verifier-agent",
+              "release-governor"
+            ]
+          },
+          "role": {
+            "enum": ["plan", "build", "verify", "govern"]
+          },
+          "status": {
+            "enum": ["pending", "running", "completed", "blocked"]
+          },
+          "inputVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path", "digest", "producedBy", "version"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._/-]+$"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "producedBy": {
+            "enum": ["delivery-lead", "builder-agent", "verifier-agent", "release-governor", "system"]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "status": {
+              "const": "pending"
+            }
+          },
+          "allOf": [
+            { "not": { "required": ["decidedAt"] } },
+            { "not": { "required": ["decidedBy"] } }
+          ]
+        },
+        {
+          "properties": {
+            "status": {
+              "enum": ["approved", "rejected"]
+            }
+          },
+          "required": ["decidedAt", "decidedBy"]
+        }
+      ],
+      "required": ["required", "status", "approvalId", "requestedAt", "version"],
+      "properties": {
+        "required": {
+          "const": true
+        },
+        "status": {
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "approvalId": {
+          "type": "string",
+          "pattern": "^approval-[a-z0-9][a-z0-9-]{5,63}$"
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "decidedBy": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

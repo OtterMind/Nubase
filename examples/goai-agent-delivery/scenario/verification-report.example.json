@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "reportId": "verification-goai-demo-001",
+  "taskId": "task-goai-demo-001",
+  "runId": "run-goai-dry-001",
+  "verifiedAt": "2026-08-10T04:03:00.000Z",
+  "verifiedBy": "verifier-agent",
+  "result": "passed",
+  "manifest": {
+    "path": "nubase.deploy.json",
+    "digest": "sha256:f1afbae6edd2e772dda455b280c4589c0eaa92a7cd89f5db17b42d4a0d72431c"
+  },
+  "checks": [
+    {
+      "name": "manifest-contract",
+      "status": "passed",
+      "evidence": ["nubase.deploy.json"]
+    },
+    {
+      "name": "database-rls",
+      "status": "passed",
+      "evidence": ["schema.sql"]
+    },
+    {
+      "name": "function-contract",
+      "status": "passed",
+      "evidence": ["functions/api/nubase-function.json"]
+    },
+    {
+      "name": "assets-entrypoint",
+      "status": "passed",
+      "evidence": ["assets/index.html"]
+    }
+  ]
+}

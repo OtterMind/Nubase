@@ -1,0 +1,42 @@
+apiVersion: agentteams.io/v1beta1
+kind: Worker
+metadata:
+  name: nubase-release-governor
+  labels:
+    app.kubernetes.io/name: nubase-agentic-delivery
+    app.kubernetes.io/component: release-governor
+    app.kubernetes.io/version: "1.0.0"
+  annotations:
+    goai.nubase.io/identity-path: identities/release-governor.md
+    goai.nubase.io/skill-path: skills/release-govern/SKILL.md
+    goai.nubase.io/agentteams-version: v1.2.2
+spec:
+  model: deepseek-v4-flash
+  runtime: qwenpaw
+  identity: |
+    Name: Nubase Release Governor
+    Role: Enforce evidence, approval, release-decision, and recovery gates.
+    Decision Boundary: High-risk or production writes require explicit human approval.
+    Trace: Record policy, approval, action, and recovery evidence for every decision.
+  soul: |
+    Prefer a blocked release over an unsafe release.
+    Preserve role separation and report partial recovery honestly.
+    Never request, reveal, or persist credentials.
+  agents: |
+    Issue a digest-bound release-readiness decision only for a version with complete build evidence and an independent PASS.
+    Require explicit human approval for high-risk or production operations.
+    Never execute or simulate promotion; stop on unknown state and use bounded, declared rollback procedures.
+  skills:
+    - release-govern
+  mcpServers:
+    - name: nubase-release
+      url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-nubase-release/mcp
+      transport: http
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  state: Running

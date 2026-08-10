@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0",
+  "approvalId": "approval-goai-demo-001",
+  "runId": "run-goai-dry-001",
+  "requestedAt": "2026-08-10T04:04:00.000Z",
+  "requestedBy": "release-governor",
+  "riskLevel": "high",
+  "humanApprovalRequired": true,
+  "decision": "approved",
+  "requestedAction": {
+    "type": "release_decision",
+    "target": "staging",
+    "manifest": "nubase.deploy.json",
+    "manifestDigest": "sha256:f1afbae6edd2e772dda455b280c4589c0eaa92a7cd89f5db17b42d4a0d72431c",
+    "verificationReport": "verification-report.example.json",
+    "verificationDigest": "sha256:638af19af85f0d916102377cb9d8a18129fedd986f04fd73d93d822c48e4512d"
+  },
+  "policyChecks": [
+    {
+      "name": "manifest-validation",
+      "status": "passed"
+    },
+    {
+      "name": "secret-scan",
+      "status": "passed"
+    },
+    {
+      "name": "independent-verification",
+      "status": "passed"
+    }
+  ],
+  "evidence": [
+    "nubase.deploy.json",
+    "verification-report.example.json"
+  ],
+  "decidedBy": "human-reviewer",
+  "decidedAt": "2026-08-10T04:05:00.000Z",
+  "reason": "Synthetic approval fixture for validating the contest evidence contract."
+}

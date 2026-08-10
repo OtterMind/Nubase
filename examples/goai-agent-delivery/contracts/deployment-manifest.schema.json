@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nubase.ai/schemas/goai/deployment-manifest.schema.json",
+  "title": "GOAI Nubase Deployment Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "migrations",
+    "functions",
+    "assets",
+    "cron",
+    "rememberDeployment",
+    "securityScan",
+    "continueOnError",
+    "verifyFunctions"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{2,63}$"
+    },
+    "migrations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "file"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[0-9]{3}_[a-z][a-z0-9_]{1,63}$"
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._/-]+\\.sql$"
+          }
+        }
+      }
+    },
+    "functions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "dir", "bundle", "verify"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "dir": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._/-]+$"
+          },
+          "bundle": {
+            "const": false
+          },
+          "verify": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["method", "path", "contentType"],
+            "properties": {
+              "method": {
+                "enum": ["GET", "POST"]
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._/-]{1,128}$"
+              },
+              "contentType": {
+                "const": "application/json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dir",
+        "cacheControl",
+        "release",
+        "releaseId",
+        "spaFallback"
+      ],
+      "properties": {
+        "dir": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "cacheControl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "release": {
+          "const": true
+        },
+        "releaseId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"
+        },
+        "spaFallback": {
+          "const": true
+        }
+      }
+    },
+    "cron": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "cronExpression",
+          "targetType",
+          "timeoutSeconds",
+          "enabled"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "cronExpression": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 64
+          },
+          "targetType": {
+            "enum": ["edge_function", "db_function"]
+          },
+          "functionSlug": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,63}$"
+          },
+          "httpMethod": {
+            "enum": ["GET", "POST"]
+          },
+          "requestPath": {
+            "type": "string",
+            "pattern": "^/[A-Za-z0-9._/-]{0,127}$"
+          },
+          "dbFunctionName": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          },
+          "timeoutSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "targetType": {
+                "const": "edge_function"
+              }
+            },
+            "required": ["functionSlug", "httpMethod", "requestPath"]
+          },
+          {
+            "properties": {
+              "targetType": {
+                "const": "db_function"
+              }
+            },
+            "required": ["dbFunctionName"]
+          }
+        ]
+      }
+    },
+    "rememberDeployment": {
+      "const": true
+    },
+    "securityScan": {
+      "const": true
+    },
+    "continueOnError": {
+      "const": false
+    },
+    "verifyFunctions": {
+      "const": true
+    }
+  }
+}

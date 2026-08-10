@@ -24,8 +24,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -95,7 +93,7 @@ class PostgrestControllerTest {
         var json = new ObjectMapper().readTree((String) response.getBody());
         assertThat(json.get(0).get("id").asInt()).isEqualTo(1);
         assertThat(json.get(0).get("text").asText()).isEqualTo("ship tests");
-        assertThat(servletResponse.getHeader("Access-Control-Allow-Origin")).isEqualTo("*");
+        assertThat(servletResponse.getHeader("Access-Control-Allow-Origin")).isNull();
         verify(jdbcTemplate).execute("SET LOCAL ROLE \"service_role\"");
         verify(jdbcTemplate).execute("RESET ROLE");
     }

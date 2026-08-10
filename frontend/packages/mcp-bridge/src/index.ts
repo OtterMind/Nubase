@@ -9,7 +9,7 @@ import { runDeployAppCommand } from './deploy-app.js';
 import { resolveExitCode, runFunctionsCommand } from './functions.js';
 import { McpStdioServer } from './mcp-stdio.js';
 import { NubaseClient } from './nubase-client.js';
-import { callTool, TOOLS } from './tools.js';
+import { callTool, toolsForConfig } from './tools.js';
 
 const CLI_VERSION = '0.3.0';
 
@@ -119,7 +119,7 @@ const server = new McpStdioServer(async (request) => {
       return null;
     case 'tools/list':
       return {
-        tools: TOOLS.map((tool) => ({
+        tools: toolsForConfig(config).map((tool) => ({
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,

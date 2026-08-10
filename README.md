@@ -7,6 +7,8 @@
 
 Official website: [https://nubase.ai](https://nubase.ai)
 
+GOAI Agent Infra entry: [Nubase Agentic Delivery Team](GOAI.md)
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-10A074.svg)](LICENSE)
 [![npm](https://img.shields.io/npm/v/nubase_cli?logo=npm&label=nubase_cli&color=cb3837)](https://www.npmjs.com/package/nubase_cli)
 [![Docker](https://img.shields.io/docker/v/ottermind/nubase?logo=docker&label=docker&color=2496ED)](https://hub.docker.com/r/ottermind/nubase)
@@ -61,13 +63,14 @@ The all-in-one Docker image bundles **PostgreSQL + Redis + the backend + Studio*
 
 ```bash
 docker run -d --name nubase \
-  -p 9999:9999 -p 5432:5432 \
+  -p 9999:9999 \
   -v nubase_data:/data \
-  <your-namespace>/nubase:latest
+  docker.io/ottermind/nubase:latest
 ```
 
 - **Studio** → http://localhost:9999/studio — create an account, create a project, click **Provision** to initialize its database.
 - **API** → http://localhost:9999 (the Studio UI is bundled into the backend and served on the same port)
+- **PostgreSQL** → container-internal by default; host access requires an explicit secure opt-in.
 
 > First-boot secrets are generated into the `/data` volume; keep the volume to retain your projects. For a real deployment with stable secrets, see [Self-host with Docker](#-self-host-with-docker).
 
@@ -88,23 +91,25 @@ The single all-in-one image is everything you need to run Nubase on your own box
 **Try it (auto-generated secrets, kept in the volume):**
 
 ```bash
-docker run -d --name nubase -p 9999:9999 -p 5432:5432 \
-  -v nubase_data:/data <your-namespace>/nubase:latest
+docker run -d --name nubase -p 9999:9999 \
+  -v nubase_data:/data docker.io/ottermind/nubase:latest
 ```
 
 **Production (pin stable secrets so encrypted project credentials survive restarts):**
 
 ```bash
-docker run -d --name nubase -p 9999:9999 -p 5432:5432 \
+docker run -d --name nubase -p 9999:9999 \
   -v nubase_data:/data \
   -e PGRST_ENCRYPTION_MASTER_KEY="$(openssl rand -base64 32)" \
   -e METADATA_SERVICE_ROLE_KEY="$(openssl rand -base64 48)" \
-  <your-namespace>/nubase:latest
+  docker.io/ottermind/nubase:latest
 ```
 
-Everything else is configured via environment variables — Postgres, Redis, S3/R2 storage, SMTP, OAuth, and LLM providers. See [docs/docker-all-in-one.md](docs/docker-all-in-one.md) for the full list and a multi-architecture (`amd64` + `arm64`) note.
+PostgreSQL listens on container loopback by default. If host access is required, use the
+password-file opt-in documented in [docs/docker-all-in-one.md](docs/docker-all-in-one.md) and
+bind port `5432` to host loopback only.
 
-> Replace `<your-namespace>` with the Docker Hub namespace the image is published under.
+Everything else is configured via environment variables — Postgres, Redis, S3/R2 storage, SMTP, OAuth, and LLM providers. See [docs/docker-all-in-one.md](docs/docker-all-in-one.md) for the full list and a multi-architecture (`amd64` + `arm64`) note.
 
 ---
 

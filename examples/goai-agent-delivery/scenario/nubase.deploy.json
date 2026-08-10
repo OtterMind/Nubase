@@ -1,0 +1,44 @@
+{
+  "name": "goai-delivery-demo",
+  "migrations": [
+    {
+      "name": "001_delivery_tasks",
+      "file": "schema.sql"
+    }
+  ],
+  "functions": [
+    {
+      "name": "goai-delivery-api",
+      "dir": "functions/api",
+      "bundle": false,
+      "verify": {
+        "method": "GET",
+        "path": "health",
+        "contentType": "application/json"
+      }
+    }
+  ],
+  "assets": {
+    "dir": "assets",
+    "cacheControl": "no-store",
+    "release": true,
+    "releaseId": "contest-demo-v1",
+    "spaFallback": true
+  },
+  "cron": [
+    {
+      "name": "goai-delivery-health",
+      "cronExpression": "0 * * * *",
+      "targetType": "edge_function",
+      "functionSlug": "goai-delivery-api",
+      "httpMethod": "GET",
+      "requestPath": "/health",
+      "timeoutSeconds": 30,
+      "enabled": false
+    }
+  ],
+  "rememberDeployment": true,
+  "securityScan": true,
+  "continueOnError": false,
+  "verifyFunctions": true
+}

@@ -136,6 +136,18 @@ The MCP config's `env` block gates what the agent may do. Reads are always allow
 | `NUBASE_ALLOW_ADMIN_WRITE` | **on** | create/delete buckets & users, issue/revoke gateway keys |
 | `NUBASE_ALLOW_DANGEROUS_SQL` | **off** | SQL classified DANGEROUS (DROP/TRUNCATE/...) |
 
+For role-specific agents, narrow the MCP surface with exact tool names. The
+allowlist affects both `tools/list` and dispatch; the denylist takes precedence:
+
+```bash
+NUBASE_ALLOWED_TOOLS=nubase_overview,memory_context,sql_dry_run,deploy_app,deployment_status
+NUBASE_DENIED_TOOLS=project_keys,project_keys_admin,functions_secrets_set
+```
+
+Keep the three write gates disabled unless the role also needs the underlying
+mutation. Tool filtering is defense in depth; it does not replace a sandboxed
+project key or server-side authorization.
+
 `install-skills` writes SQL-execute and admin-write into the config by default; dangerous SQL stays off. Opt out per install with `--no-sql-execute` / `--no-admin-write`, or opt into dangerous SQL with `--allow-dangerous-sql`. You can also edit the flags directly in `.mcp.json` (or `.codex/config.toml`) afterwards.
 
 Installed structure:

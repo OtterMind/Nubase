@@ -3,7 +3,7 @@
 This repository can publish one Docker image that runs:
 
 - Nubase backend **and the Studio UI** on port `9999` (the Studio is bundled into the jar and served at `/studio`, same-origin with the API)
-- PostgreSQL 15 with `pgvector` on port `5432`
+- PostgreSQL 15 with `pgvector`, restricted to container loopback by default
 - Redis internally for OAuth state support
 
 The marketing website in `frontend/apps/www` is not included.
@@ -28,22 +28,19 @@ Native Windows containers are not supported because PostgreSQL, pgvector, Java, 
 
 ## Run
 
-Replace `<dockerhub-user>` with the Docker Hub namespace used by the release workflow.
-
 ```bash
 docker run -d \
   --name nubase \
   -p 9999:9999 \
-  -p 5432:5432 \
   -v nubase_data:/data \
-  docker.io/<dockerhub-user>/nubase:latest
+  docker.io/ottermind/nubase:latest
 ```
 
 Open:
 
 - Studio UI: http://localhost:9999/studio
 - API: http://localhost:9999
-- Postgres: `localhost:5432`, database `postgrest_metadata`, user `postgres`, password `postgres`
+- Postgres: internal only by default; its password is randomly generated and persisted under `/data/secrets`
 
 ### Accessing from a remote server
 
@@ -52,6 +49,28 @@ When the container runs on a remote host, just open `http://<server-ip>:9999/stu
 domain). The UI calls the API with relative paths, so login and every request follow whatever
 host you opened — there is no hardcoded `localhost` and no rebuild when the IP or domain
 changes. Only port `9999` needs to be reachable.
+
+### Optional PostgreSQL host access
+
+Keep PostgreSQL internal unless a trusted local administration tool requires direct access. To opt
+in, provide a password file with permissions `0600`, enable external access explicitly, and bind the
+port to host loopback only:
+
+```bash
+docker run -d \
+  --name nubase \
+  -p 9999:9999 \
+  -p 127.0.0.1:5432:5432 \
+  -v nubase_data:/data \
+  --mount type=bind,src=/absolute/path/to/postgres-password,dst=/run/secrets/postgres_password,readonly \
+  -e NUBASE_POSTGRES_EXTERNAL_ACCESS=true \
+  -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password \
+  docker.io/ottermind/nubase:latest
+```
+
+The explicit password must be at least 16 characters and must not use a known default. Existing
+volumes created by an older image fail closed when no persisted or explicit password is available;
+rotate the database password before upgrading, then provide it through `POSTGRES_PASSWORD_FILE`.
 
 ### Studio signup & email verification
 
@@ -70,11 +89,10 @@ For production-like installs, set stable secrets explicitly:
 docker run -d \
   --name nubase \
   -p 9999:9999 \
-  -p 5432:5432 \
   -v nubase_data:/data \
   -e PGRST_ENCRYPTION_MASTER_KEY="$(openssl rand -base64 32)" \
   -e METADATA_SERVICE_ROLE_KEY="$(openssl rand -base64 48)" \
-  docker.io/<dockerhub-user>/nubase:latest
+  docker.io/ottermind/nubase:latest
 ```
 
 ## Publish From GitHub Actions

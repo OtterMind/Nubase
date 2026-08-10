@@ -18,6 +18,8 @@ test('loadConfig reads explicit user and agent context', () => {
     NUBASE_PLATFORM_JWT: 'platform-jwt',
     NUBASE_ALLOW_SQL_EXECUTE: 'true',
     NUBASE_ALLOW_ADMIN_WRITE: 'true',
+    NUBASE_ALLOWED_TOOLS: ' nubase_overview, sql_dry_run, nubase_overview ',
+    NUBASE_DENIED_TOOLS: 'project_keys, project_keys_admin',
   });
 
   assert.equal(config.nubaseUrl, 'http://localhost:9999');
@@ -30,6 +32,8 @@ test('loadConfig reads explicit user and agent context', () => {
   assert.equal(config.platformJwt, 'platform-jwt');
   assert.equal(config.allowSqlExecute, true);
   assert.equal(config.allowAdminWrite, true);
+  assert.deepEqual(config.allowedTools, ['nubase_overview', 'sql_dry_run']);
+  assert.deepEqual(config.deniedTools, ['project_keys', 'project_keys_admin']);
 });
 
 test('loadConfig defaults admin write to false', () => {

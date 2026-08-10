@@ -1,0 +1,23 @@
+apiVersion: agentteams.io/v1beta1
+kind: Team
+metadata:
+  name: nubase-agentic-delivery
+  labels:
+    app.kubernetes.io/name: nubase-agentic-delivery
+    app.kubernetes.io/version: "1.0.0"
+  annotations:
+    goai.nubase.io/agentteams-version: v1.2.2
+spec:
+  description: Evidence-driven multi-agent delivery, verification, and governed release for Nubase applications.
+  teamName: nubase-agentic-delivery
+  workerMembers:
+    - name: nubase-delivery-lead
+      role: team_leader
+    - name: nubase-builder
+      role: worker
+    - name: nubase-verifier
+      role: worker
+    - name: nubase-release-governor
+      role: worker
+  peerMentions: true
+  heartbeatEvery: 15m
