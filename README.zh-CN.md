@@ -231,10 +231,6 @@ Nubase 仍处于早期阶段，但全部八大模块（数据库、认证、存�
 
 衷心感谢每一位为 Nubase 点亮 Star 的朋友！🙏 完整名单见 **[stargazers 页面 »](https://github.com/OtterMind/Nubase/stargazers)**
 
-### Star 趋势
-
-[![Star History Chart](https://api.star-history.com/svg?repos=OtterMind/Nubase&type=Date)](https://star-history.com/#OtterMind/Nubase&Date)
-
 ## 贡献
 
 欢迎贡献与提 issue —— 见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [SECURITY.md](SECURITY.md)。这是早期公开版本，你的反馈会塑造它接下来的方向。🙌

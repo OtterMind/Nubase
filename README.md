@@ -229,10 +229,6 @@ Nubase is early-stage but all eight modules (Database, Auth, Storage, Assets, Fu
 
 A huge thank-you to everyone who has starred Nubase! 🙏 See the full list on the **[stargazers page »](https://github.com/OtterMind/Nubase/stargazers)**
 
-### Star history
-
-[![Star History Chart](https://api.star-history.com/svg?repos=OtterMind/Nubase&type=Date)](https://star-history.com/#OtterMind/Nubase&Date)
-
 ## Contributing
 
 Contributions and issues are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). This is an early public release, so feedback shapes what comes next. 🙌
