@@ -137,11 +137,11 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResourceFoundException(Exception ex) {
-        log.error("Unexpected error: "+ex.getMessage());
+        log.error("Unexpected error: {}", ex.getMessage());
 
         ErrorResponse error = ErrorResponse.of(
                 "server_error",
-                "An unexpected error occurred"+ex.getMessage()
+                "An unexpected error occurred"
         );
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);

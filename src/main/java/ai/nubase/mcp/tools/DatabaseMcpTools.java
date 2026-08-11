@@ -207,7 +207,7 @@ public class DatabaseMcpTools {
             SqlExecutionResponse response = sqlExecutionService.executeSql(request);
             // After executing SQL, reload schema cache to reflect any changes (especially for DDL statements)
             schemaCacheManager.reloadSchemaCache(dbConfig.getDbKey());
-            log.info("MCP_Tool_USED- executeSql completed"+ JSON.toJSONString(response));
+            log.info("MCP_Tool_USED- executeSql completed " + JSON.toJSONString(response));
             if (response.isSuccess()) {
                 // Return results for each statement
                 if (response.getResults() != null && !response.getResults().isEmpty()) {
