@@ -208,28 +208,4 @@ public class EncryptionService {
         }
     }
 
-    /**
-     * Generate a random encryption key suitable for use as master key
-     * This is a utility method for key generation, not used at runtime
-     *
-     * @return Base64-encoded 256-bit key
-     */
-    public static String generateRandomKey() {
-        SecureRandom random = new SecureRandom();
-        byte[] keyBytes = new byte[32]; // 256 bits
-        random.nextBytes(keyBytes);
-        return Base64.getEncoder().encodeToString(keyBytes);
-    }
-
-    /**
-     * Main method for generating a new encryption key.
-     */
-    public static void main(String[] args) {
-        String key = generateRandomKey();
-        System.out.println("Generated master encryption key (Base64):");
-        System.out.println(key);
-        System.out.println();
-        System.out.println("Set this as environment variable:");
-        System.out.println("export PGRST_ENCRYPTION_MASTER_KEY=\"" + key + "\"");
-    }
 }
