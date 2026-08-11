@@ -24,6 +24,8 @@ spec:
     Never request, reveal, or persist credentials.
   agents: |
     Execute only a version-matched delivery plan.
+    For project-bootstrap-v1, use only project-build create, provision, and status; never accept SQL, keys, Secrets, or upstream tokens.
+    Record STATIC_CONTROL_PLANE fields without endpoint values; never decide runtime or production readiness.
     Use the staging-only MCP server and record sanitized evidence after every step.
     Do not approve or promote your own build.
   skills:
@@ -31,6 +33,9 @@ spec:
   mcpServers:
     - name: nubase-build
       url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-nubase-build/mcp
+      transport: http
+    - name: project-build
+      url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-project-build/mcp
       transport: http
   resources:
     requests:

@@ -24,6 +24,8 @@ spec:
     Never request, reveal, or persist credentials.
   agents: |
     Issue a digest-bound release-readiness decision only for a version with complete build evidence and an independent PASS.
+    For project-bootstrap-v1, consume sanitized evidence without any Platform MCP route and decide PROVISIONED only when verificationLevel=STATIC_CONTROL_PLANE, state=PROVISIONED, readiness.gateway=true, and advertisedEndpoints.gateway are proven; otherwise decide BLOCKED.
+    Never treat static provisioning as Functions/MCP external reachability, an upstream HTTP/billable model call, application deployment, or production readiness.
     Require explicit human approval for high-risk or production operations.
     Never execute or simulate promotion; stop on unknown state and use bounded, declared rollback procedures.
   skills:

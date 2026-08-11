@@ -176,6 +176,179 @@ const cases = [
     }),
   },
   {
+    name: 'platform Builder unclassified provision tool',
+    expected: /platformHttpPolicy does not classify tools: platformProjectProvision/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'project-build');
+      route.platformHttpPolicy.allowTools = route.platformHttpPolicy.allowTools.filter(
+        (tool) => tool !== 'platformProjectProvision',
+      );
+    }),
+  },
+  {
+    name: 'platform read create escalation',
+    expected: /platformHttpPolicy allowTools must match the reviewed platform role partition/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'project-read');
+      route.platformHttpPolicy.denyTools = route.platformHttpPolicy.denyTools.filter(
+        (tool) => tool !== 'platformProjectCreate',
+      );
+      route.platformHttpPolicy.allowTools.push('platformProjectCreate');
+    }),
+  },
+  {
+    name: 'platform route tenant endpoint crossover',
+    expected: /platformHttpPolicy endpoint must be "\/platform\/mcp"/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'project-read');
+      route.platformHttpPolicy.endpoint = '/mcp';
+    }),
+  },
+  {
+    name: 'Governor platform route grant',
+    expected: /MCP servers must match the reviewed role routes/,
+    mutate: async () => {
+      const workerPath = packagePath('agentteams-v1.2.2', 'workers', 'release-governor', 'worker.yaml');
+      const worker = await readFile(workerPath, 'utf8');
+      await writeFile(workerPath, worker.replace(
+        '  skills:',
+        '  mcpServers:\n    - name: project-read\n      url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-project-read/mcp\n  skills:',
+      ));
+    },
+  },
+  {
+    name: 'AgentTeams MCP route external URL',
+    expected: /builder-agent\/worker\.yaml MCP servers must match the reviewed role routes/,
+    mutate: async () => {
+      const workerPath = packagePath('agentteams-v1.2.2', 'workers', 'builder-agent', 'worker.yaml');
+      const worker = await readFile(workerPath, 'utf8');
+      await writeFile(workerPath, worker.replace(
+        'http://aigw-local.agentteams.io:8080/mcp-servers/mcp-project-build/mcp',
+        'https://external.invalid/mcp',
+      ));
+    },
+  },
+  {
+    name: 'AgentTeams MCP route transport drift',
+    expected: /release-governor\/worker\.yaml MCP servers must match the reviewed role routes/,
+    mutate: async () => {
+      const workerPath = packagePath('agentteams-v1.2.2', 'workers', 'release-governor', 'worker.yaml');
+      const worker = await readFile(workerPath, 'utf8');
+      await writeFile(workerPath, worker.replace('      transport: http', '      transport: stdio'));
+    },
+  },
+  {
+    name: 'HiClaw MCP route external URL',
+    expected: /team\.yaml nubase-builder MCP servers must match the reviewed role routes/,
+    mutate: async () => {
+      const teamPath = packagePath('compat', 'hiclaw-v1.1.2', 'team.yaml');
+      const team = await readFile(teamPath, 'utf8');
+      await writeFile(teamPath, team.replace(
+        'http://aigw-local.hiclaw.io:8080/mcp-servers/mcp-project-build/mcp',
+        'https://external.invalid/mcp',
+      ));
+    },
+  },
+  {
+    name: 'MCP route duplicate YAML key',
+    expected: /builder-agent\/worker\.yaml contains duplicate YAML key transport/,
+    mutate: async () => {
+      const workerPath = packagePath('agentteams-v1.2.2', 'workers', 'builder-agent', 'worker.yaml');
+      const worker = await readFile(workerPath, 'utf8');
+      await writeFile(workerPath, worker.replace(
+        '      transport: http\n  resources:',
+        '      transport: http\n      transport: stdio\n  resources:',
+      ));
+    },
+  },
+  {
+    name: 'MCP route extra field',
+    expected: /builder-agent\/worker\.yaml contains unsupported MCP server YAML structure/,
+    mutate: async () => {
+      const workerPath = packagePath('agentteams-v1.2.2', 'workers', 'builder-agent', 'worker.yaml');
+      const worker = await readFile(workerPath, 'utf8');
+      await writeFile(workerPath, worker.replace(
+        '      transport: http\n  resources:',
+        '      transport: http\n      headers:\n  resources:',
+      ));
+    },
+  },
+  {
+    name: 'Verifier static provisioning contract removed',
+    expected: /must require explicit static control-plane provisioning evidence; missing: verificationLevel=STATIC_CONTROL_PLANE, state=PROVISIONED, readiness\.gateway=true, advertisedEndpoints\.gateway/,
+    mutate: async () => {
+      const skillPath = packagePath('skills', 'release-verify', 'SKILL.md');
+      const skill = await readFile(skillPath, 'utf8');
+      await writeFile(skillPath, skill
+        .replaceAll('verificationLevel=STATIC_CONTROL_PLANE', 'verification level is present')
+        .replaceAll('state=PROVISIONED', 'project state is complete')
+        .replaceAll('readiness.gateway=true', 'gateway readiness is true')
+        .replaceAll('advertisedEndpoints.gateway', 'gateway endpoint entry'));
+    },
+  },
+  {
+    name: 'Verifier static boundary removed',
+    expected: /must limit PROVISIONED to static control-plane evidence; missing boundary:/,
+    mutate: async () => {
+      const skillPath = packagePath('skills', 'release-verify', 'SKILL.md');
+      const skill = await readFile(skillPath, 'utf8');
+      await writeFile(skillPath, skill
+        .replaceAll('Functions/MCP 外部可达', 'service availability')
+        .replaceAll('模型 upstream HTTP/计费调用', 'model behavior')
+        .replaceAll('应用部署', 'application state')
+        .replaceAll('生产可用', 'production state'));
+    },
+  },
+  {
+    name: 'Verifier worker static decision contract removed',
+    expected: /must require explicit static control-plane provisioning evidence; missing: state=PROVISIONED/,
+    mutate: async () => {
+      const workerPath = packagePath('agentteams-v1.2.2', 'workers', 'verifier-agent', 'worker.yaml');
+      const worker = await readFile(workerPath, 'utf8');
+      await writeFile(workerPath, worker.replaceAll('state=PROVISIONED', 'project state is complete'));
+    },
+  },
+  {
+    name: 'Verifier status trace exact-match removed',
+    expected: /must exact-match all platformProjectStatus trace echoes; missing: status\.approvalId === approvalId/,
+    mutate: async () => {
+      const skillPath = packagePath('skills', 'release-verify', 'SKILL.md');
+      const skill = await readFile(skillPath, 'utf8');
+      await writeFile(
+        skillPath,
+        skill.replaceAll('status.approvalId === approvalId', 'status approval is present'),
+      );
+    },
+  },
+  {
+    name: 'project name mapping removed',
+    expected: /must preserve the deterministic display-name to project-ref mapping; missing: goai_psx_agent_teams_project/,
+    mutate: async () => {
+      const skillPath = packagePath('skills', 'app-plan', 'SKILL.md');
+      const skill = await readFile(skillPath, 'utf8');
+      await writeFile(
+        skillPath,
+        skill.replaceAll('goai_psx_agent_teams_project', 'derived project ref'),
+      );
+    },
+  },
+  {
+    name: 'platform grant approval binding removed',
+    expected: /must bind the automation grant to the reviewed run approval ID/,
+    mutate: async () => {
+      const runbookPath = packagePath(
+        'compat',
+        'hiclaw-v1.1.2',
+        'PLATFORM_AUTOMATION_SECURITY.md',
+      );
+      const runbook = await readFile(runbookPath, 'utf8');
+      await writeFile(
+        runbookPath,
+        runbook.replace('--approval-binding "${GOAI_APPROVAL_ID}"', '--approval-binding "approval"'),
+      );
+    },
+  },
+  {
     name: 'Higress consumer without runtime prefix',
     expected: /higressConsumers do not match the reviewed Console API consumer identities/,
     mutate: () => mutatePolicy((policy) => {

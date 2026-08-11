@@ -173,7 +173,52 @@ validate_yaml_contracts() {
       compat_path = ARGV[5]
       expected_names = %w[nubase-delivery-lead nubase-builder nubase-verifier nubase-release-governor]
       expected_skills = %w[app-plan app-build release-verify release-govern]
-      expected_mcp_servers = %w[nubase-read nubase-build nubase-read nubase-release]
+      reject_duplicate_yaml_keys = lambda do |path|
+        document = Psych.parse_file(path)
+        walk = nil
+        walk = lambda do |node|
+          if node.is_a?(Psych::Nodes::Mapping)
+            seen = {}
+            node.children.each_slice(2) do |key_node, value_node|
+              abort "unsupported YAML mapping key in #{path}" unless key_node.is_a?(Psych::Nodes::Scalar)
+              key = key_node.value
+              abort "duplicate YAML key #{key} in #{path}" if seen.key?(key)
+              seen[key] = true
+              walk.call(value_node)
+            end
+          elsif node.respond_to?(:children)
+            Array(node.children).each { |child| walk.call(child) }
+          end
+        end
+        walk.call(document)
+      end
+      (worker_paths + [team_path, compat_path]).each { |path| reject_duplicate_yaml_keys.call(path) }
+
+      mcp_route = lambda do |runtime, name, server_name|
+        {
+          "name" => name,
+          "url" => "http://aigw-local.#{runtime}.io:8080/mcp-servers/#{server_name}/mcp",
+          "transport" => "http"
+        }
+      end
+      expected_agentteams_mcp_servers = [
+        [mcp_route.call("agentteams", "nubase-read", "mcp-nubase-read"),
+         mcp_route.call("agentteams", "project-read", "mcp-project-read")],
+        [mcp_route.call("agentteams", "nubase-build", "mcp-nubase-build"),
+         mcp_route.call("agentteams", "project-build", "mcp-project-build")],
+        [mcp_route.call("agentteams", "nubase-read", "mcp-nubase-read"),
+         mcp_route.call("agentteams", "project-read", "mcp-project-read")],
+        [mcp_route.call("agentteams", "nubase-release", "mcp-nubase-release")]
+      ]
+      expected_hiclaw_mcp_servers = [
+        [mcp_route.call("hiclaw", "nubase-read", "mcp-nubase-read"),
+         mcp_route.call("hiclaw", "project-read", "mcp-project-read")],
+        [mcp_route.call("hiclaw", "nubase-build", "mcp-nubase-build"),
+         mcp_route.call("hiclaw", "project-build", "mcp-project-build")],
+        [mcp_route.call("hiclaw", "nubase-read", "mcp-nubase-read"),
+         mcp_route.call("hiclaw", "project-read", "mcp-project-read")],
+        [mcp_route.call("hiclaw", "nubase-release", "mcp-nubase-release")]
+      ]
 
       workers = worker_paths.map { |path| YAML.safe_load(File.read(path), aliases: false) }
       workers.each_with_index do |worker, index|
@@ -183,8 +228,8 @@ validate_yaml_contracts() {
         abort "AgentTeams Worker model is required" if worker.dig("spec", "model").to_s.empty?
         abort "AgentTeams Worker identity is required" if worker.dig("spec", "identity").to_s.empty?
         abort "unexpected AgentTeams Worker skill" unless worker.dig("spec", "skills") == [expected_skills[index]]
-        actual_mcp_servers = (worker.dig("spec", "mcpServers") || []).map { |server| server["name"] }
-        abort "unexpected AgentTeams Worker MCP server" unless actual_mcp_servers == [expected_mcp_servers[index]]
+        actual_mcp_servers = worker.dig("spec", "mcpServers") || []
+        abort "unexpected AgentTeams Worker MCP servers" unless actual_mcp_servers == expected_agentteams_mcp_servers[index]
       end
 
       team = YAML.safe_load(File.read(team_path), aliases: false)
@@ -199,8 +244,14 @@ validate_yaml_contracts() {
       abort "invalid HiClaw compatibility kind" unless compat["kind"] == "Team"
       abort "HiClaw compatibility leader is required" unless compat.dig("spec", "leader", "name") == expected_names.first
       abort "HiClaw v1.1.2 LeaderSpec must not declare unsupported local skills" if compat.dig("spec", "leader").key?("skills")
+      leader_mcp_servers = compat.dig("spec", "leader", "mcpServers") || []
+      abort "unexpected HiClaw Leader MCP servers" unless leader_mcp_servers == expected_hiclaw_mcp_servers.first
       compat_workers = compat.dig("spec", "workers") || []
       abort "HiClaw compatibility Team must contain three Workers" unless compat_workers.map { |item| item["name"] } == expected_names.drop(1)
+      compat_workers.each_with_index do |worker, index|
+        actual_mcp_servers = worker["mcpServers"] || []
+        abort "unexpected HiClaw Worker MCP servers" unless actual_mcp_servers == expected_hiclaw_mcp_servers[index + 1]
+      end
     ' \
         "${AGENTTEAMS_ROOT}/workers/delivery-lead/worker.yaml" \
         "${AGENTTEAMS_ROOT}/workers/builder-agent/worker.yaml" \
@@ -215,6 +266,7 @@ validate_mcp_policy() {
       policy_path = ARGV[0]
       stdio_source_path = ARGV[1]
       java_tools_root = ARGV[2]
+      platform_tools_root = ARGV[3]
       policy = JSON.parse(File.read(policy_path))
       stdio_source = File.read(stdio_source_path)
       known_stdio_tools = stdio_source.scan(/^  ([a-z][a-z0-9_]+): \{/).flatten
@@ -247,6 +299,14 @@ validate_mcp_policy() {
       end
       abort "empty Java MCP tool inventory" if known_java_tools.empty?
       abort "duplicate Java MCP source tool name" unless known_java_tools.uniq == known_java_tools
+      platform_sources = %w[
+        PlatformMcpController.java PlatformProjectAutomationFacade.java
+      ].map { |name| File.join(platform_tools_root, name) }
+      abort "missing Platform MCP canonical source" unless platform_sources.all? { |path| File.file?(path) }
+      known_platform_tools = platform_sources.flat_map { |path|
+        File.read(path).scan(/"(platformProject[A-Z][A-Za-z0-9]*)"/).flatten
+      }.uniq
+      abort "empty Platform MCP tool inventory" if known_platform_tools.empty?
 
       expected_consumer_by_worker = {
         "nubase-delivery-lead" => "worker-nubase-delivery-lead",
@@ -327,6 +387,24 @@ validate_mcp_policy() {
             deploymentsList deploymentStatus deploymentLogs deploymentRollback appWorkersList
             appWorkerStatus assetsList functionsList functionsLogs cronList cronGet cronRuns
           ]
+        },
+        "project-build" => {
+          "server" => "mcp-project-build",
+          "workers" => %w[nubase-builder],
+          "consumers" => %w[worker-nubase-builder],
+          "transport" => "platform",
+          "platform_readiness" => "READY_AFTER_ROUTE_AND_AUTH_VERIFICATION",
+          "platform_allow" => %w[
+            platformProjectCreate platformProjectProvision platformProjectStatus
+          ]
+        },
+        "project-read" => {
+          "server" => "mcp-project-read",
+          "workers" => %w[nubase-delivery-lead nubase-verifier],
+          "consumers" => %w[worker-nubase-delivery-lead worker-nubase-verifier],
+          "transport" => "platform",
+          "platform_readiness" => "READY_AFTER_ROUTE_AND_AUTH_VERIFICATION",
+          "platform_allow" => %w[platformProjectStatus]
         }
       }
 
@@ -348,16 +426,19 @@ validate_mcp_policy() {
 
       sensitive_by_transport = policy["deniedSensitiveToolsByTransport"] || {}
       abort "unexpected sensitive tool transport fields" unless sensitive_by_transport.keys.sort == %w[
-        javaHttpPolicy stdioBridgePolicy
+        javaHttpPolicy platformHttpPolicy stdioBridgePolicy
       ].sort
       stdio_sensitive = sensitive_by_transport["stdioBridgePolicy"] || []
       java_sensitive = sensitive_by_transport["javaHttpPolicy"] || []
+      platform_sensitive = sensitive_by_transport["platformHttpPolicy"] || []
       abort "empty stdio sensitive tool inventory" if stdio_sensitive.empty?
       abort "empty Java sensitive tool inventory" if java_sensitive.empty?
       abort "duplicate stdio sensitive tool" unless stdio_sensitive.uniq == stdio_sensitive
       abort "duplicate Java sensitive tool" unless java_sensitive.uniq == java_sensitive
+      abort "duplicate platform sensitive tool" unless platform_sensitive.uniq == platform_sensitive
       abort "unknown stdio sensitive tool" unless (stdio_sensitive - known_stdio_tools).empty?
       abort "unknown Java sensitive tool" unless (java_sensitive - known_java_tools).empty?
+      abort "unknown platform sensitive tool" unless (platform_sensitive - known_platform_tools).empty?
 
       validate_partition = lambda do |transport_policy, known_tools, sensitive_tools, route_name, transport_name, name_pattern|
         allow_tools = transport_policy["allowTools"] || []
@@ -380,15 +461,19 @@ validate_mcp_policy() {
 
       routes = policy["routes"] || []
       abort "unexpected MCP policy routes" unless routes.map { |route| route["name"] }.sort == expected.keys.sort
-      all_workers = []
-      all_consumers = []
+      worker_route_bindings = []
+      consumer_route_bindings = []
 
       routes.each do |route|
         route_name = route["name"]
         route_expected = expected.fetch(route_name)
-        abort "unexpected MCP route fields for #{route_name}" unless route.keys.sort == %w[
-          name mcpServerName agentTeamsWorkers higressConsumers stdioBridgePolicy javaHttpPolicy
-        ].sort
+        platform_route = route_expected["transport"] == "platform"
+        expected_route_fields = if platform_route
+          %w[name mcpServerName agentTeamsWorkers higressConsumers platformHttpPolicy]
+        else
+          %w[name mcpServerName agentTeamsWorkers higressConsumers stdioBridgePolicy javaHttpPolicy]
+        end
+        abort "unexpected MCP route fields for #{route_name}" unless route.keys.sort == expected_route_fields.sort
         abort "unexpected MCP server name for #{route_name}" unless route["mcpServerName"] == route_expected["server"]
 
         workers = route["agentTeamsWorkers"] || []
@@ -400,8 +485,37 @@ validate_mcp_policy() {
           expected_consumer = expected_consumer_by_worker.fetch(worker)
           abort "unexpected Worker/consumer mapping for #{route_name}" unless consumer == expected_consumer
         end
-        all_workers.concat(workers)
-        all_consumers.concat(consumers)
+        worker_route_bindings.concat(workers.map { |worker| "#{worker}:#{route_name}" })
+        consumer_route_bindings.concat(consumers.map { |consumer| "#{consumer}:#{route_name}" })
+
+        if platform_route
+          platform_policy = route["platformHttpPolicy"] || {}
+          abort "unexpected platformHttpPolicy fields for #{route_name}" unless platform_policy.keys.sort == %w[
+            endpoint readiness readinessReason allowTools denyTools
+          ].sort
+          abort "unexpected platform endpoint for #{route_name}" unless platform_policy["endpoint"] == "/platform/mcp"
+          abort "unexpected platform readiness for #{route_name}" unless (
+            platform_policy["readiness"] == route_expected["platform_readiness"]
+          )
+          abort "missing platform readiness reason for #{route_name}" if platform_policy["readinessReason"].to_s.strip.empty?
+          validate_partition.call(
+            platform_policy,
+            known_platform_tools,
+            platform_sensitive,
+            route_name,
+            "platformHttpPolicy",
+            /\A[a-z][A-Za-z0-9]*\z/
+          )
+          abort "unexpected platform allowTools for #{route_name}" unless (
+            platform_policy["allowTools"].sort == route_expected["platform_allow"].sort
+          )
+          abort "platform policy must disclose isolation and forbidden sensitive inputs for #{route_name}" unless (
+            platform_policy["readinessReason"].match?(/independent|separate|isolated/i) &&
+            platform_policy["readinessReason"].match?(/SQL/i) &&
+            platform_policy["readinessReason"].match?(/key|secret|upstream token/i)
+          )
+          next
+        end
 
         stdio_policy = route["stdioBridgePolicy"] || {}
         abort "unexpected stdioBridgePolicy fields for #{route_name}" unless stdio_policy.keys.sort == %w[
@@ -455,12 +569,13 @@ validate_mcp_policy() {
         )
       end
 
-      abort "duplicate AgentTeams Worker route assignment" unless all_workers.uniq == all_workers
-      abort "duplicate Higress consumer route assignment" unless all_consumers.uniq == all_consumers
+      abort "duplicate AgentTeams Worker/route binding" unless worker_route_bindings.uniq == worker_route_bindings
+      abort "duplicate Higress consumer/route binding" unless consumer_route_bindings.uniq == consumer_route_bindings
     ' \
         "$MCP_POLICY" \
         "$REPO_ROOT/frontend/packages/mcp-bridge/src/tools.ts" \
-        "$REPO_ROOT/src/main/java/ai/nubase/mcp/tools"
+        "$REPO_ROOT/src/main/java/ai/nubase/mcp/tools" \
+        "$REPO_ROOT/src/main/java/ai/nubase/platform/mcp"
 }
 
 detect_cli() {
@@ -982,7 +1097,7 @@ main() {
 
     if [ "${APPLY}" = false ]; then
         log "Validation passed; no files were copied and no resources were applied"
-        log "Run with --apply only after the three least-privilege Nubase MCP gateway endpoints are configured"
+        log "Run with --apply only after the three tenant and two independent Platform MCP routes are configured"
         log "Manifest declarations do not prove MCP route existence or consumer authorization"
         return
     fi

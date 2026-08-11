@@ -52,7 +52,8 @@
       "gatewayRevokeKey",
       "storageCreateBucket",
       "storageDeleteBucket"
-    ]
+    ],
+    "platformHttpPolicy": []
   },
   "routes": [
     {
@@ -468,6 +469,51 @@
           "storageListBuckets",
           "storageCreateBucket",
           "storageDeleteBucket"
+        ]
+      }
+    },
+    {
+      "name": "project-build",
+      "mcpServerName": "mcp-project-build",
+      "agentTeamsWorkers": [
+        "nubase-builder"
+      ],
+      "higressConsumers": [
+        "worker-nubase-builder"
+      ],
+      "platformHttpPolicy": {
+        "endpoint": "/platform/mcp",
+        "readiness": "READY_AFTER_ROUTE_AND_AUTH_VERIFICATION",
+        "readinessReason": "The isolated platform endpoint exposes exactly the sanitized project create, provision, and status contract. It does not expose tenant SQL, project keys, Secrets, user management, custom upstream configuration, or upstream tokens.",
+        "allowTools": [
+          "platformProjectCreate",
+          "platformProjectProvision",
+          "platformProjectStatus"
+        ],
+        "denyTools": []
+      }
+    },
+    {
+      "name": "project-read",
+      "mcpServerName": "mcp-project-read",
+      "agentTeamsWorkers": [
+        "nubase-delivery-lead",
+        "nubase-verifier"
+      ],
+      "higressConsumers": [
+        "worker-nubase-delivery-lead",
+        "worker-nubase-verifier"
+      ],
+      "platformHttpPolicy": {
+        "endpoint": "/platform/mcp",
+        "readiness": "READY_AFTER_ROUTE_AND_AUTH_VERIFICATION",
+        "readinessReason": "The isolated platform read route exposes only sanitized project status. Project creation and provisioning remain exclusive to the Builder consumer, and keys, Secrets, SQL, custom upstream configuration, and upstream tokens are not in the platform inventory.",
+        "allowTools": [
+          "platformProjectStatus"
+        ],
+        "denyTools": [
+          "platformProjectCreate",
+          "platformProjectProvision"
         ]
       }
     }

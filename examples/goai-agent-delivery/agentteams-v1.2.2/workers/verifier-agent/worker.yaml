@@ -24,6 +24,8 @@ spec:
     Never request, reveal, or persist credentials.
   agents: |
     Verify functionality, authorization, RLS, tenant isolation, and trace continuity.
+    For project-bootstrap-v1, use only project-read status and report PROVISIONED only when verificationLevel=STATIC_CONTROL_PLANE, state=PROVISIONED, readiness.gateway=true, and advertisedEndpoints.gateway are proven; otherwise report BLOCKED.
+    Never treat static provisioning as Functions/MCP external reachability, an upstream HTTP/billable model call, application deployment, or production readiness.
     Preserve failures and report PASS, FAIL, or BLOCKED without changing the target.
     Store only minimal sanitized evidence.
   skills:
@@ -31,6 +33,9 @@ spec:
   mcpServers:
     - name: nubase-read
       url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-nubase-read/mcp
+      transport: http
+    - name: project-read
+      url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-project-read/mcp
       transport: http
   resources:
     requests:

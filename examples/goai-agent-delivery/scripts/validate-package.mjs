@@ -18,10 +18,46 @@ const sensitiveAssignmentPattern = new RegExp(
 );
 
 const expectedWorkers = new Map([
-  ['delivery-lead', { resourceName: 'nubase-delivery-lead', skill: 'app-plan', identity: 'delivery-lead' }],
-  ['builder-agent', { resourceName: 'nubase-builder', skill: 'app-build', identity: 'builder-agent' }],
-  ['verifier-agent', { resourceName: 'nubase-verifier', skill: 'release-verify', identity: 'verifier-agent' }],
-  ['release-governor', { resourceName: 'nubase-release-governor', skill: 'release-govern', identity: 'release-governor' }],
+  ['delivery-lead', {
+    resourceName: 'nubase-delivery-lead',
+    skill: 'app-plan',
+    identity: 'delivery-lead',
+    mcpRoutes: [
+      { name: 'nubase-read', serverName: 'mcp-nubase-read' },
+      { name: 'project-read', serverName: 'mcp-project-read' },
+    ],
+  }],
+  ['builder-agent', {
+    resourceName: 'nubase-builder',
+    skill: 'app-build',
+    identity: 'builder-agent',
+    mcpRoutes: [
+      { name: 'nubase-build', serverName: 'mcp-nubase-build' },
+      { name: 'project-build', serverName: 'mcp-project-build' },
+    ],
+  }],
+  ['verifier-agent', {
+    resourceName: 'nubase-verifier',
+    skill: 'release-verify',
+    identity: 'verifier-agent',
+    mcpRoutes: [
+      { name: 'nubase-read', serverName: 'mcp-nubase-read' },
+      { name: 'project-read', serverName: 'mcp-project-read' },
+    ],
+  }],
+  ['release-governor', {
+    resourceName: 'nubase-release-governor',
+    skill: 'release-govern',
+    identity: 'release-governor',
+    mcpRoutes: [
+      { name: 'nubase-release', serverName: 'mcp-nubase-release' },
+    ],
+  }],
+]);
+
+const mcpGatewayHostByRuntime = new Map([
+  ['agentteams', 'aigw-local.agentteams.io'],
+  ['hiclaw', 'aigw-local.hiclaw.io'],
 ]);
 
 const requiredIdentitySections = [
@@ -50,6 +86,25 @@ const requiredSkillSections = [
   'Version',
 ];
 
+const requiredPlatformStatusTraceFields = ['taskId', 'runId', 'specDigest', 'approvalId'];
+const requiredPlatformStatusTraceChecks = requiredPlatformStatusTraceFields.map(
+  (field) => `status.${field} === ${field}`,
+);
+const requiredPlatformProvisioningChecks = [
+  'verificationLevel=STATIC_CONTROL_PLANE',
+  'state=PROVISIONED',
+  'readiness.gateway=true',
+  'advertisedEndpoints.gateway',
+];
+const requiredProjectNameMappingMarkers = [
+  'appName',
+  'projectRef',
+  'goai_',
+  'psx_agent_teams_project',
+  'goai_psx_agent_teams_project',
+  'BLOCKED',
+];
+
 await validatePackage();
 
 if (errors.length > 0) {
@@ -70,6 +125,44 @@ async function validatePackage() {
 }
 
 async function validateOperationalRunbooks() {
+  const projectBootstrapDocuments = [
+    [path.join(packageRoot, 'README.md'), 'package README'],
+    [path.join(packageRoot, 'agentteams-v1.2.2', 'README.md'), 'AgentTeams README'],
+    [path.join(packageRoot, 'compat', 'hiclaw-v1.1.2', 'README.md'), 'HiClaw compatibility runbook'],
+    [path.join(packageRoot, 'compat', 'hiclaw-v1.1.2', 'PLATFORM_AUTOMATION_SECURITY.md'), 'Platform automation security runbook'],
+    [path.join(packageRoot, 'compat', 'hiclaw-v1.1.2', 'team.yaml'), 'HiClaw compatibility team'],
+  ];
+  for (const [documentPath, documentLabel] of projectBootstrapDocuments) {
+    const documentText = await readRequiredText(documentPath, documentLabel);
+    if (!documentText) continue;
+    validatePlatformProvisioningChecks(documentText, relative(documentPath));
+    validateStaticControlPlaneBoundary(documentText, relative(documentPath));
+  }
+
+  for (const documentPath of [
+    path.join(packageRoot, 'README.md'),
+    path.join(packageRoot, 'agentteams-v1.2.2', 'README.md'),
+    path.join(packageRoot, 'compat', 'hiclaw-v1.1.2', 'PLATFORM_AUTOMATION_SECURITY.md'),
+    path.join(packageRoot, 'compat', 'hiclaw-v1.1.2', 'team.yaml'),
+  ]) {
+    const documentText = await readRequiredText(documentPath, 'project name mapping contract');
+    if (documentText) validateProjectNameMapping(documentText, relative(documentPath));
+  }
+
+  const platformSecurityPath = path.join(
+    packageRoot,
+    'compat',
+    'hiclaw-v1.1.2',
+    'PLATFORM_AUTOMATION_SECURITY.md',
+  );
+  const platformSecurity = await readRequiredText(
+    platformSecurityPath,
+    'Platform automation security runbook',
+  );
+  if (platformSecurity && !platformSecurity.includes('--approval-binding "${GOAI_APPROVAL_ID}"')) {
+    addError(`${relative(platformSecurityPath)} must bind the automation grant to the reviewed run approval ID`);
+  }
+
   const compatibilityReadmePath = path.join(packageRoot, 'compat', 'hiclaw-v1.1.2', 'README.md');
   const compatibilityReadme = await readRequiredText(
     compatibilityReadmePath,
@@ -152,6 +245,10 @@ async function validateAgentTeamsPackage() {
     if (!/^\s*mcpServers:\s*$/m.test(workerText)) {
       addError(`${label} must declare an MCP server boundary`);
     }
+    const mcpServers = yamlObjectList(workerText, 'spec.mcpServers', label, true);
+    if (!deepEqual(mcpServers, expectedMcpServers(contract, 'agentteams'))) {
+      addError(`${label} MCP servers must match the reviewed role routes`);
+    }
     if (/\bdeploy_app\b/.test(workerText)) {
       addError(`${label} must not claim that remote HTTP MCP exposes deploy_app`);
     }
@@ -159,11 +256,48 @@ async function validateAgentTeamsPackage() {
       && (/\bPromote only\b/i.test(workerText) || /\bRole:.*\bpromotion\b/i.test(workerText))) {
       addError(`${label} must not instruct the Release Governor to execute promotion`);
     }
+    if (directory === 'delivery-lead' || directory === 'verifier-agent' || directory === 'release-governor') {
+      if (!/project-bootstrap-v1/.test(workerText)
+        || !/PROVISIONED/.test(workerText)
+        || !/BLOCKED/.test(workerText)) {
+        addError(`${label} must preserve the PROVISIONED or BLOCKED project-bootstrap-v1 terminal contract`);
+      }
+    }
+    if (directory === 'delivery-lead') {
+      validateProjectNameMapping(workerText, label);
+    }
+    if (directory === 'verifier-agent' || directory === 'release-governor') {
+      validatePlatformProvisioningChecks(workerText, label);
+      validateStaticControlPlaneBoundary(workerText, label);
+    }
   }
 
+  await validateHiclawMcpServers();
   await validateMcpToolPolicies(runtimeRoot);
 
   summary.push('AgentTeams v1.2.2: 4 Workers, 4 distinct roles, 1 team leader');
+}
+
+async function validateHiclawMcpServers() {
+  const teamPath = path.join(packageRoot, 'compat', 'hiclaw-v1.1.2', 'team.yaml');
+  const teamText = await readRequiredText(teamPath, 'HiClaw compatibility team');
+  if (!teamText) return;
+  const label = relative(teamPath);
+  const actualByResourceName = hiclawMcpServersByResource(teamText, label);
+  const expectedResourceNames = new Set(
+    [...expectedWorkers.values()].map((worker) => worker.resourceName),
+  );
+  for (const resourceName of actualByResourceName.keys()) {
+    if (!expectedResourceNames.has(resourceName)) {
+      addError(`${label} contains unexpected HiClaw role ${resourceName}`);
+    }
+  }
+  for (const contract of expectedWorkers.values()) {
+    const actual = actualByResourceName.get(contract.resourceName);
+    if (!deepEqual(actual, expectedMcpServers(contract, 'hiclaw'))) {
+      addError(`${label} ${contract.resourceName} MCP servers must match the reviewed role routes`);
+    }
+  }
 }
 
 async function validateMcpToolPolicies(runtimeRoot) {
@@ -220,17 +354,20 @@ async function validateMcpToolPolicies(runtimeRoot) {
 
   const stdioTools = await extractStdioMcpTools();
   const javaTools = await extractJavaMcpTools();
-  if (stdioTools.length === 0 || javaTools.length === 0) return;
+  const platformTools = await extractPlatformMcpTools();
+  await validatePlatformStatusSourceContract();
+  if (stdioTools.length === 0 || javaTools.length === 0 || platformTools.length === 0) return;
 
   const sensitiveByTransport = policy.deniedSensitiveToolsByTransport ?? {};
   assertExactKeys(
     sensitiveByTransport,
-    ['stdioBridgePolicy', 'javaHttpPolicy'],
+    ['stdioBridgePolicy', 'javaHttpPolicy', 'platformHttpPolicy'],
     policyLabel + ' deniedSensitiveToolsByTransport',
   );
   const transportInventories = new Map([
     ['stdioBridgePolicy', stdioTools],
     ['javaHttpPolicy', javaTools],
+    ['platformHttpPolicy', platformTools],
   ]);
   for (const [transport, inventory] of transportInventories) {
     const sensitive = Array.isArray(sensitiveByTransport[transport])
@@ -444,6 +581,26 @@ async function validateMcpToolPolicies(runtimeRoot) {
         'cronRuns',
       ],
     }],
+    ['project-build', {
+      server: 'mcp-project-build',
+      workers: ['nubase-builder'],
+      consumers: ['worker-nubase-builder'],
+      transport: 'platform',
+      platformReadiness: 'READY_AFTER_ROUTE_AND_AUTH_VERIFICATION',
+      platformAllow: [
+        'platformProjectCreate',
+        'platformProjectProvision',
+        'platformProjectStatus',
+      ],
+    }],
+    ['project-read', {
+      server: 'mcp-project-read',
+      workers: ['nubase-delivery-lead', 'nubase-verifier'],
+      consumers: ['worker-nubase-delivery-lead', 'worker-nubase-verifier'],
+      transport: 'platform',
+      platformReadiness: 'READY_AFTER_ROUTE_AND_AUTH_VERIFICATION',
+      platformAllow: ['platformProjectStatus'],
+    }],
   ]);
 
   if (!Array.isArray(policy.routes) || policy.routes.length !== expectedRoutes.size) {
@@ -452,28 +609,31 @@ async function validateMcpToolPolicies(runtimeRoot) {
   }
   assertUnique(policy.routes.map((route) => route.name), 'MCP policy route names');
   assertUnique(policy.routes.map((route) => route.mcpServerName), 'MCP policy server names');
-  const allWorkers = [];
-  const allConsumers = [];
+  const workerRouteBindings = [];
+  const consumerRouteBindings = [];
 
   for (const route of policy.routes) {
     const label = policyLabel + ' route ' + (route.name ?? '<unnamed>');
-    assertExactKeys(
-      route,
-      [
-        'name',
-        'mcpServerName',
-        'agentTeamsWorkers',
-        'higressConsumers',
-        'stdioBridgePolicy',
-        'javaHttpPolicy',
-      ],
-      label,
-    );
     const expected = expectedRoutes.get(route.name);
     if (!expected) {
       addError(label + ' is not an expected route');
       continue;
     }
+    const isPlatformRoute = expected.transport === 'platform';
+    assertExactKeys(
+      route,
+      isPlatformRoute
+        ? ['name', 'mcpServerName', 'agentTeamsWorkers', 'higressConsumers', 'platformHttpPolicy']
+        : [
+          'name',
+          'mcpServerName',
+          'agentTeamsWorkers',
+          'higressConsumers',
+          'stdioBridgePolicy',
+          'javaHttpPolicy',
+        ],
+      label,
+    );
     expectEqual(route.mcpServerName, expected.server, label + ' mcpServerName');
 
     const workers = Array.isArray(route.agentTeamsWorkers) ? route.agentTeamsWorkers : [];
@@ -501,8 +661,41 @@ async function validateMcpToolPolicies(runtimeRoot) {
         );
       }
     }
-    allWorkers.push(...workers);
-    allConsumers.push(...consumers);
+    workerRouteBindings.push(...workers.map((worker) => `${worker}:${route.name}`));
+    consumerRouteBindings.push(...consumers.map((consumer) => `${consumer}:${route.name}`));
+
+    if (isPlatformRoute) {
+      const platformPolicy = route.platformHttpPolicy ?? {};
+      assertExactKeys(
+        platformPolicy,
+        ['endpoint', 'readiness', 'readinessReason', 'allowTools', 'denyTools'],
+        label + ' platformHttpPolicy',
+      );
+      expectEqual(platformPolicy.endpoint, '/platform/mcp', label + ' platformHttpPolicy endpoint');
+      expectEqual(
+        platformPolicy.readiness,
+        expected.platformReadiness,
+        label + ' platformHttpPolicy readiness',
+      );
+      expectPresent(platformPolicy.readinessReason, label + ' platformHttpPolicy readinessReason');
+      const platformPartition = validateToolPartition(
+        platformPolicy,
+        platformTools,
+        sensitiveByTransport.platformHttpPolicy ?? [],
+        label + ' platformHttpPolicy',
+        /^[a-z][A-Za-z0-9]*$/,
+        'exact camelCase platform',
+      );
+      if (!sameStringSet(platformPartition.allow, expected.platformAllow)) {
+        addError(label + ' platformHttpPolicy allowTools must match the reviewed platform role partition');
+      }
+      if (!/independent|separate|isolated/i.test(platformPolicy.readinessReason ?? '')
+        || !/SQL/i.test(platformPolicy.readinessReason ?? '')
+        || !/key|secret|upstream token/i.test(platformPolicy.readinessReason ?? '')) {
+        addError(label + ' platformHttpPolicy readinessReason must disclose isolation and forbidden sensitive inputs');
+      }
+      continue;
+    }
 
     const stdioPolicy = route.stdioBridgePolicy ?? {};
     assertExactKeys(
@@ -565,8 +758,8 @@ async function validateMcpToolPolicies(runtimeRoot) {
     }
   }
 
-  assertUnique(allWorkers, 'MCP policy AgentTeams Workers across routes');
-  assertUnique(allConsumers, 'MCP policy Higress consumers across routes');
+  assertUnique(workerRouteBindings, 'MCP policy Worker/route bindings');
+  assertUnique(consumerRouteBindings, 'MCP policy consumer/route bindings');
 
   if (!Array.isArray(policy.requiredToolsNotYetExposed)
     || !policy.requiredToolsNotYetExposed.includes('deployment_promote')) {
@@ -577,7 +770,8 @@ async function validateMcpToolPolicies(runtimeRoot) {
   }
   summary.push(
     'MCP policy: ' + policy.routes.length + ' role routes classify all ' + stdioTools.length
-    + ' stdio tools and ' + javaTools.length + ' Java HTTP tools',
+    + ' stdio tools, ' + javaTools.length + ' Java tenant HTTP tools, and '
+    + platformTools.length + ' platform HTTP tools',
   );
 }
 
@@ -661,6 +855,92 @@ async function extractJavaMcpTools() {
   return tools;
 }
 
+async function extractPlatformMcpTools() {
+  const platformRoot = path.join(
+    repositoryRoot,
+    'src',
+    'main',
+    'java',
+    'ai',
+    'nubase',
+    'platform',
+    'mcp',
+  );
+  const sourceNames = ['PlatformMcpController.java', 'PlatformProjectAutomationFacade.java'];
+  const tools = [];
+  for (const sourceName of sourceNames) {
+    const sourcePath = path.join(platformRoot, sourceName);
+    let source;
+    try {
+      source = await readFile(sourcePath, 'utf8');
+    } catch {
+      addError('cannot read ' + path.relative(repositoryRoot, sourcePath)
+        + ' to validate the independent Platform MCP inventory');
+      return [];
+    }
+    for (const match of source.matchAll(/"(platformProject[A-Z][A-Za-z0-9]*)"/g)) {
+      if (!tools.includes(match[1])) tools.push(match[1]);
+    }
+  }
+  if (tools.length === 0) {
+    addError('could not extract the explicit Platform MCP tool registry');
+    return [];
+  }
+  assertUnique(tools, 'Platform MCP canonical source tool names');
+  return tools;
+}
+
+async function validatePlatformStatusSourceContract() {
+  const sourcePath = path.join(
+    repositoryRoot,
+    'src',
+    'main',
+    'java',
+    'ai',
+    'nubase',
+    'platform',
+    'mcp',
+    'PlatformProjectDtos.java',
+  );
+  let source;
+  try {
+    source = await readFile(sourcePath, 'utf8');
+  } catch {
+    addError('cannot read ' + path.relative(repositoryRoot, sourcePath)
+      + ' to validate the Platform MCP status trace contract');
+    return;
+  }
+  const statusBody = source.match(/public record StatusResult\(([\s\S]*?)\)\s*\{/u)?.[1] ?? '';
+  const requiredResponseFields = [
+    ...requiredPlatformStatusTraceFields,
+    'state',
+    'verificationLevel',
+    'readiness',
+    'advertisedEndpoints',
+  ];
+  const missing = requiredResponseFields.filter(
+    (field) => !new RegExp(`\\b${field}\\b`).test(statusBody),
+  );
+  if (missing.length) {
+    addError('PlatformProjectDtos.StatusResult must expose static provisioning fields: ' + missing.join(', '));
+  }
+
+  const facadePath = path.join(path.dirname(sourcePath), 'PlatformProjectAutomationFacade.java');
+  let facadeSource;
+  try {
+    facadeSource = await readFile(facadePath, 'utf8');
+  } catch {
+    addError('cannot read ' + path.relative(repositoryRoot, facadePath)
+      + ' to validate the Platform MCP static provisioning states');
+    return;
+  }
+  for (const marker of ['STATIC_CONTROL_PLANE', 'PROVISIONED']) {
+    if (!facadeSource.includes(`"${marker}"`)) {
+      addError(`PlatformProjectAutomationFacade must emit ${marker}`);
+    }
+  }
+}
+
 function validateToolPartition(policy, inventory, sensitiveTools, label, namePattern, convention) {
   const allow = Array.isArray(policy.allowTools) ? policy.allowTools : [];
   const deny = Array.isArray(policy.denyTools) ? policy.denyTools : [];
@@ -704,6 +984,12 @@ async function validateIdentitiesAndSkills() {
       for (const section of requiredIdentitySections) {
         if (!sections.get(section)?.trim()) addError(`${relative(identityPath)} section ${section} must not be empty`);
       }
+      validatePlatformStatusTraceChecks(identityText, relative(identityPath));
+      validatePlatformProvisioningChecks(identityText, relative(identityPath));
+      validateStaticControlPlaneBoundary(identityText, relative(identityPath));
+      if (directory === 'delivery-lead') {
+        validateProjectNameMapping(identityText, relative(identityPath));
+      }
     }
 
     const skillPath = path.join(packageRoot, 'skills', contract.skill, 'SKILL.md');
@@ -725,9 +1011,59 @@ async function validateIdentitiesAndSkills() {
     if (/\bdeploy_app\b/.test(skillText) && /remote|HTTP MCP/i.test(skillText)) {
       addError(`${relative(skillPath)} must not claim that remote HTTP MCP exposes deploy_app`);
     }
+    if (!/project-bootstrap-v1/.test(skillText)
+      || !/BLOCKED/.test(skillText)
+      || !/PROVISIONED/.test(skillText)) {
+      addError(`${relative(skillPath)} must preserve the reviewed project-bootstrap-v1 terminal contract`);
+    }
+    validatePlatformProvisioningChecks(skillText, relative(skillPath));
+    validateStaticControlPlaneBoundary(skillText, relative(skillPath));
+    if (!/approvalId/.test(skillText)) {
+      addError(`${relative(skillPath)} must preserve the project-bootstrap approval binding`);
+    }
+    validatePlatformStatusTraceChecks(skillText, relative(skillPath));
+    if (contract.skill === 'app-plan') {
+      validateProjectNameMapping(skillText, relative(skillPath));
+    }
   }
 
   summary.push('Identity and Skill contracts: 4 identities and 4 versioned Skills');
+}
+
+function validatePlatformStatusTraceChecks(text, label) {
+  const missing = requiredPlatformStatusTraceChecks.filter((check) => !text.includes(check));
+  if (missing.length) {
+    addError(`${label} must exact-match all platformProjectStatus trace echoes; missing: ${missing.join(', ')}`);
+  }
+}
+
+function validateProjectNameMapping(text, label) {
+  const missing = requiredProjectNameMappingMarkers.filter((marker) => !text.includes(marker));
+  if (missing.length) {
+    addError(`${label} must preserve the deterministic display-name to project-ref mapping; missing: ${missing.join(', ')}`);
+  }
+}
+
+function validatePlatformProvisioningChecks(text, label) {
+  const missing = requiredPlatformProvisioningChecks.filter((check) => !text.includes(check));
+  if (missing.length) {
+    addError(`${label} must require explicit static control-plane provisioning evidence; missing: ${missing.join(', ')}`);
+  }
+}
+
+function validateStaticControlPlaneBoundary(text, label) {
+  const requiredBoundaryGroups = [
+    ['Functions/MCP external reachability', [/Functions/i, /MCP/i, /external[\s\S]{0,80}reachability|外部可达/i]],
+    ['upstream HTTP or billing call', [/upstream/i, /HTTP/i, /billable|billing|计费/i]],
+    ['application deployment', [/application deployment|应用部署|应用已部署/i]],
+    ['production readiness', [/production readiness|生产可用/i]],
+  ];
+  const missing = requiredBoundaryGroups
+    .filter(([, patterns]) => !patterns.every((pattern) => pattern.test(text)))
+    .map(([boundary]) => boundary);
+  if (missing.length) {
+    addError(`${label} must limit PROVISIONED to static control-plane evidence; missing boundary: ${missing.join(', ')}`);
+  }
 }
 
 async function validateScenario() {
@@ -1456,6 +1792,140 @@ function assertNoDuplicateJsonKeys(text, label) {
   }
 }
 
+function expectedMcpServers(contract, runtime) {
+  const host = mcpGatewayHostByRuntime.get(runtime);
+  if (!host) throw new Error(`unsupported MCP runtime ${runtime}`);
+  return contract.mcpRoutes.map((route) => ({
+    name: route.name,
+    url: `http://${host}:8080/mcp-servers/${route.serverName}/mcp`,
+    transport: 'http',
+  }));
+}
+
+function hiclawMcpServersByResource(text, label) {
+  const lines = text.split(/\r?\n/);
+  const leaderIndexes = exactYamlKeyIndexes(lines, 'leader', 2);
+  const workerListIndexes = exactYamlKeyIndexes(lines, 'workers', 2);
+  if (leaderIndexes.length !== 1) {
+    addError(`${label} must declare exactly one spec.leader mapping`);
+  }
+  if (workerListIndexes.length !== 1) {
+    addError(`${label} must declare exactly one spec.workers list`);
+  }
+  if (leaderIndexes.length !== 1 || workerListIndexes.length !== 1) return new Map();
+
+  const result = new Map();
+  const leaderStart = leaderIndexes[0];
+  const workersStart = workerListIndexes[0];
+  const leaderName = directYamlScalar(lines, leaderStart + 1, workersStart, 4, 'name');
+  if (!leaderName) {
+    addError(`${label} HiClaw leader name is required`);
+  } else {
+    result.set(
+      leaderName,
+      yamlObjectListInRange(
+        lines,
+        leaderStart + 1,
+        workersStart,
+        4,
+        `${label} ${leaderName}`,
+      ),
+    );
+  }
+
+  const workerStarts = [];
+  for (let index = workersStart + 1; index < lines.length; index += 1) {
+    const match = lines[index].match(/^ {4}- name:\s*(.+?)\s*$/);
+    if (match) workerStarts.push({ index, name: unquoteYaml(match[1]) });
+  }
+  for (let index = 0; index < workerStarts.length; index += 1) {
+    const worker = workerStarts[index];
+    const end = workerStarts[index + 1]?.index ?? lines.length;
+    if (result.has(worker.name)) {
+      addError(`${label} contains duplicate HiClaw role ${worker.name}`);
+      continue;
+    }
+    result.set(
+      worker.name,
+      yamlObjectListInRange(
+        lines,
+        worker.index + 1,
+        end,
+        6,
+        `${label} ${worker.name}`,
+      ),
+    );
+  }
+  return result;
+}
+
+function yamlObjectListInRange(lines, start, end, fieldIndent, label) {
+  const keyIndexes = [];
+  const keyPrefix = ' '.repeat(fieldIndent);
+  for (let index = start; index < end; index += 1) {
+    if (lines[index] === `${keyPrefix}mcpServers:`) keyIndexes.push(index);
+  }
+  if (keyIndexes.length === 0) return [];
+  if (keyIndexes.length > 1) {
+    addError(`${label} contains duplicate YAML key mcpServers`);
+  }
+
+  const items = [];
+  let current = null;
+  const listStart = keyIndexes[0];
+  for (let index = listStart + 1; index < end; index += 1) {
+    const line = lines[index];
+    if (!line.trim() || line.trimStart().startsWith('#')) continue;
+    const indent = line.match(/^\s*/)[0].length;
+    if (indent <= fieldIndent) break;
+    const first = line.match(
+      new RegExp(`^ {${fieldIndent + 2}}- ([A-Za-z0-9_.-]+):\\s*(.+?)\\s*$`),
+    );
+    if (first) {
+      current = {};
+      setYamlObjectProperty(current, first[1], unquoteYaml(first[2]), label);
+      items.push(current);
+      continue;
+    }
+    const property = line.match(
+      new RegExp(`^ {${fieldIndent + 4}}([A-Za-z0-9_.-]+):\\s*(.+?)\\s*$`),
+    );
+    if (current && property) {
+      setYamlObjectProperty(current, property[1], unquoteYaml(property[2]), label);
+      continue;
+    }
+    addError(`${label} contains unsupported MCP server YAML structure`);
+  }
+  return items;
+}
+
+function exactYamlKeyIndexes(lines, key, indent) {
+  const expected = `${' '.repeat(indent)}${key}:`;
+  const indexes = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index] === expected) indexes.push(index);
+  }
+  return indexes;
+}
+
+function directYamlScalar(lines, start, end, indent, key) {
+  const pattern = new RegExp(`^ {${indent}}${escapeRegExp(key)}:\\s*(.+?)\\s*$`);
+  const values = [];
+  for (let index = start; index < end; index += 1) {
+    const match = lines[index].match(pattern);
+    if (match) values.push(unquoteYaml(match[1]));
+  }
+  return values.length === 1 ? values[0] : undefined;
+}
+
+function setYamlObjectProperty(target, key, value, label) {
+  if (Object.hasOwn(target, key)) {
+    addError(`${label} contains duplicate YAML key ${key}`);
+    return;
+  }
+  target[key] = value;
+}
+
 function yamlScalarMap(text) {
   const fields = new Map();
   const stack = [];
@@ -1474,27 +1944,40 @@ function yamlScalarMap(text) {
   return fields;
 }
 
-function yamlObjectList(text, fieldPath) {
+function yamlObjectList(text, fieldPath, label = fieldPath, strict = false) {
   const lines = text.split(/\r?\n/);
   const key = fieldPath.split('.').at(-1);
-  const start = lines.findIndex((line) => new RegExp(`^\\s*${escapeRegExp(key)}:\\s*$`).test(line));
+  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}:\\s*$`);
+  const starts = lines
+    .map((line, index) => (keyPattern.test(line) ? index : -1))
+    .filter((index) => index >= 0);
+  const start = starts[0] ?? -1;
   if (start < 0) return [];
   const baseIndent = lines[start].match(/^\s*/)[0].length;
+  const duplicateAtSameIndent = starts.some(
+    (index) => index !== start && lines[index].match(/^\s*/)[0].length === baseIndent,
+  );
+  if (duplicateAtSameIndent) addError(`${label} contains duplicate YAML key ${key}`);
   const items = [];
   let current = null;
   for (let index = start + 1; index < lines.length; index += 1) {
     const line = lines[index];
-    if (!line.trim()) continue;
+    if (!line.trim() || line.trimStart().startsWith('#')) continue;
     const indent = line.match(/^\s*/)[0].length;
     if (indent <= baseIndent) break;
     const first = line.match(/^\s*-\s+([A-Za-z0-9_.-]+):\s*(.+?)\s*$/);
     if (first) {
-      current = { [first[1]]: unquoteYaml(first[2]) };
+      current = {};
+      setYamlObjectProperty(current, first[1], unquoteYaml(first[2]), label);
       items.push(current);
       continue;
     }
     const property = line.match(/^\s+([A-Za-z0-9_.-]+):\s*(.+?)\s*$/);
-    if (current && property) current[property[1]] = unquoteYaml(property[2]);
+    if (current && property) {
+      setYamlObjectProperty(current, property[1], unquoteYaml(property[2]), label);
+      continue;
+    }
+    if (strict) addError(`${label} contains unsupported MCP server YAML structure`);
   }
   return items;
 }

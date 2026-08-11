@@ -2,7 +2,7 @@
 name: release-verify
 description: "Independently verify staged Nubase releases against functional, isolation, security, and traceability gates."
 assign_when: "Assign to the Verifier Agent after a staging deployment produces complete build evidence."
-version: "1.2.0"
+version: "1.4.0"
 ---
 
 # Release Verify
@@ -17,12 +17,15 @@ version: "1.2.0"
 
 对 `bounded-asset-v1` rollback drill，Verifier 先证明 marker stage 与 deployment evidence 一致，再按验收契约产生显式的 drill failure；Governor 完成 rollback 后，Verifier 必须再次证明 marker 不存在且 deployment 进入完整恢复状态。
 
+对 `project-bootstrap-v1`，Verifier 只能通过 `project-read` 调用 `platformProjectStatus`，独立验证静态控制面 provisioning；不得使用 Builder 的 write route，也不得把静态状态外推为运行时健康。
+
 ## Inputs
 
 - `acceptance-contract.md`、staging 部署 ID 和目标资源版本。
 - `build-evidence.json` 与可访问的只读端点、日志和审计记录。
 - Service-role `assetsList` metadata view，以及 anon/authenticated RLS、公共 GET/HEAD 与 SPA fallback 的预定义负例。
 - 正常、权限失败、租户隔离、工具中断和回滚相关评测用例。
+- 项目 bootstrap 的 ref/taskId/runId/approvalId/specDigest、Builder 脱敏证据和预定义 readiness/越权负例。
 
 ## Outputs
 
@@ -30,6 +33,7 @@ version: "1.2.0"
 - `verification-summary.md`，给出 `PASS`、`FAIL` 或 `BLOCKED` 建议。
 - `recovery-verification-report.json`，对 rollback 后的 marker absence、deployment status、`asset_version_deleted` operation 和精确 `ownershipVersionId` 给出独立结论。
 - 经过脱敏的复现步骤和失败分类。
+- `project-bootstrap-v1` 的 `PROVISIONED` 或 `BLOCKED` 建议，以及不含 key/Secret/Token、但保留四个非秘密 trace 回显字段的静态 provisioning evidence。
 
 ## Call Conditions
 
@@ -42,12 +46,13 @@ version: "1.2.0"
 - Verifier Agent Identity。
 - AgentTeams 共享任务目录。
 - 只读 `nubase-read` MCP 端点和预定义评测集。
+- 只暴露 `platformProjectStatus` 的 `project-read` platform MCP。
 - Worker 内启用的 `mcporter` Skill；实际 discovery、只读 call 和 bounded status metadata 是运行证据，CoPaw native MCP registry 计数不是本闭环的 readiness 依据。
 
 ## Procedure
 
 1. 校验 `taskId`、`runId`、deployment ID、manifest digest 和目标版本贯通。
-2. 使用 `mcporter` 对 `nubase-read` 执行实际 discovery，确认仅有经策略允许的只读工具。
+2. 对 tenant staging 或 `bounded-asset-v1`，使用 `mcporter` 对 `nubase-read` 执行实际 discovery，确认仅有经策略允许的只读工具；`project-bootstrap-v1` 使用步骤 11–12 的独立 `project-read`，不依赖 tenant route。
 3. 检查构建证据是否完整，任何缺失先标记为失败而不是推断成功。
 4. 对通用 staging 执行健康、契约、鉴权、RLS 和跨租户隔离测试。
 5. 对 `bounded-asset-v1`，使用 service-role `deploymentStatus`、`deploymentLogs` 和 `assetsList` 核对唯一 marker path、成功 step、无覆盖语义；artifact digest 必须为 lowercase SHA-256 且在 stage response、deployment summary、step 三方一致，bounded positive size 必须在 response、step、marker 三方一致，`ownershipVersionId` 必须在 response、step、build evidence 一致，marker/deployment `publicUrl` 为空。不得尝试预计算含服务端随机 nonce 的 marker digest。
@@ -56,10 +61,14 @@ version: "1.2.0"
 8. Governor rollback 后重新执行只读检查，要求 marker 不存在、deployment status 为 `rolled_back`，且唯一成功 action 为 `asset_version_deleted`、`ownershipVersionId` 与 stage/step/build evidence 完全一致；否则输出 `BLOCKED` 并要求人工补偿。
 9. 检查输出中是否出现凭据、认证头、私钥或敏感用户数据。
 10. 对每个条件保存最小充分证据，并生成机器可读结论。
+11. 对 `project-bootstrap-v1`，确认 `project-read` inventory 只有 `platformProjectStatus`，以相同 ref/taskId/runId/approvalId/specDigest 调用 status；从成功响应本身逐字段验证 `status.taskId === taskId`、`status.runId === runId`、`status.specDigest === specDigest`、`status.approvalId === approvalId`，再要求 `verificationLevel=STATIC_CONTROL_PLANE`、`state=PROVISIONED`、`enabled=true`、`running=false`、全部静态 provisioning readiness 为 true、`readiness.gateway=true` 且 `advertisedEndpoints.gateway` 存在。
+12. 验证状态结果不含项目 key、JWT Secret、数据库用户名/密码/连接串或 upstream Token；同时证明 Verifier 无 create/provision/SQL/Secret/Key 权限。
 
 ## Failure Handling
 
 工具不可用、private-storage/public-origin 前置条件不符、reserved marker 在任一非 service-role surface 可见、出现 public URL、Trace 断裂、`ownershipVersionId` 缺失/不一致或目标版本变化时按失败关闭。Rollback 后若 status 为部分/失败/运行中或未知，恢复验证不得通过。
+
+项目状态未完成、失败、未知、`verificationLevel!=STATIC_CONTROL_PLANE`、`state!=PROVISIONED`、`TRACE_CONTEXT_MISMATCH`、status 四字段缺失/任一不等、数据库静态检查未通过、`readiness.gateway!=true`、`advertisedEndpoints.gateway` 缺失或响应包含敏感字段时输出 `BLOCKED`；不得通过重试写操作修复。
 
 ## Safety Constraints
 
@@ -70,6 +79,7 @@ version: "1.2.0"
 - 不读取 marker 原始内容；只核对 path、digest、size、ETag、非秘密 `ownershipVersionId`、status 和 bounded error code 等脱敏元数据。
 - Service-role metadata 例外不能被描述为 anon/authenticated、公共 GET/HEAD 或 CDN 可访问。
 - `PASS` 只能支持 readiness 或 recovery 判断，不能证明 `deploy_app`、`deployment_promote` 或已发布。
+- `PROVISIONED` 只证明 schema/RLS、默认 key 注册和 gateway catalog 等静态控制面配置；不证明 Functions/MCP 外部可达、模型 upstream HTTP/计费调用、应用部署或生产可用。`advertisedEndpoints.gateway` 不是健康探测。
 
 ## Reuse Boundaries
 
@@ -81,4 +91,4 @@ version: "1.2.0"
 
 ## Version
 
-`1.2.0`。增加 private-storage/public-origin 门禁、reserved RLS/GET/HEAD/SPA 隐藏、service-role metadata 验证和版本化恢复门禁。验收字段、测试集合或证据 schema 变化时升级版本。
+`1.4.0`。要求 Verifier 独立核对 `STATIC_CONTROL_PLANE`、`PROVISIONED`、gateway readiness 与 advertised endpoint，并明确静态证据不等于运行时或生产可用性。验收字段、测试集合或证据 schema 变化时升级版本。

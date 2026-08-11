@@ -6,14 +6,16 @@
 
 运行 `script/goai/install-agentteams.sh` 只执行静态校验和运行时探测，不复制文件、不创建 Worker、不创建 Team，也不修改 MCP 路由。只有显式传入 `--apply` 才会把四个 Skill 复制到 Manager workspace，并按 Worker 在前、Team 在后的顺序调用 `agt apply`。
 
-清单中的 `mcpServers` 只是期望的网关地址，不会创建 Higress MCP Server，也不会证明 consumer 已获授权。如果 `nubase-read`、`nubase-build` 或 `nubase-release` 路由尚不存在，AgentTeams 资源仍可能创建成功，但工具状态必须标记为 `UNAVAILABLE`，不得宣称工具已授权或端到端可用。
+清单中的 `mcpServers` 只是期望的网关地址，不会创建 Higress MCP Server，也不会证明 consumer 已获授权。如果三个 tenant 路由或 `project-build`、`project-read` 任一路由尚不存在，AgentTeams 资源仍可能创建成功，但工具状态必须标记为 `UNAVAILABLE`，不得宣称工具已授权或端到端可用。
 
 ## MCP 权限门禁
 
-`mcp-tool-policies.json` 是角色工具权限的可审阅来源。每条路由同时声明两套不能混用的工具集合：
+`mcp-tool-policies.json` 是角色工具权限的可审阅来源。三个 tenant 路由声明两套不能混用的工具集合：
 
 - `stdioBridgePolicy` 对应 TypeScript stdio bridge 的 snake_case 工具，原有 65 个工具分区及 `bridgeGuards` 保持不变。
 - `javaHttpPolicy` 对应 Nubase Java `POST /mcp` 的 camelCase 工具，三条路由分别对源码注册的 44 个 `@Tool` 方法做完整 allow/deny 分区。
+
+两个独立 Platform 路由只声明 `platformHttpPolicy`，端点固定为 `POST /platform/mcp`，inventory 精确为三个工具：`platformProjectCreate`、`platformProjectProvision`、`platformProjectStatus`。它们不属于 Java tenant 的 44-tool inventory，也不得复制到 `stdioBridgePolicy` 或 `javaHttpPolicy`。
 
 当前本地 HiClaw/Higress 上游是 Java HTTP MCP，因此必须把 `javaHttpPolicy.allowTools` 原样写入 Higress MCP 原始配置的顶层 `allowTools`，不能放在 `server` 下。只有在另行部署受控 stdio wrapper 时，才使用 `stdioBridgePolicy.allowTools`、`stdioBridgePolicy.denyTools` 和 `stdioBridgePolicy.bridgeGuards`；两套工具名不得交叉复制。
 
@@ -47,6 +49,18 @@ tools: []
 - `nubase-read` 只授权 Delivery Lead 和 Verifier，拒绝凭据、用户列表和所有写工具。
 - `nubase-build` 只授权 Builder，Java HTTP 路由允许专用 sandbox 中的 Memory、Assets、Functions、Cron 构建和受限 `deploymentStageAsset`，但拒绝 `executeSql`、`executeSqlDryRun`、项目密钥、Secret、用户管理、删除和 rollback。
 - `nubase-release` 只授权 Release Governor，允许发布证据查询、共享状态记录和受控 rollback，拒绝构建、SQL、Secret、Key 和用户管理工具。
+- `project-build` 只授权 Builder，允许三个 Platform 工具；`project-read` 只授权 Delivery Lead 与 Verifier，且只允许 `platformProjectStatus`。
+- Release Governor 不绑定任何 Platform 路由，只依据 Verifier 的脱敏证据决策。
+
+## Project Bootstrap v1
+
+用户可在 Element 对 Manager 发送一句“创建项目并配置数据库/网关”。Manager 必须把它规范化为 `project-bootstrap-v1`，生成本次授权的 `approvalId`，并要求 operator grant 的 `approvalBinding` 与 create/provision/status 全链使用同一个 approval。后端要求 provision 与成功 create ledger、status 与同一 create 或 provision ledger 使用相同的 `taskId`、`runId`、`specDigest`、`approvalId`；成功 status 还会回显这四字段。角色顺序为：Delivery Lead 固化非秘密项目意图与验收条件；Builder 通过 `project-build` 各执行一个逻辑 create/provision，create 响应未知时先用 status 依据 create ledger 对账，确认同一 trace 的 Project 已存在后才继续 provision；Verifier 必须从 `project-read` 响应本身逐字段 exact-match 四个 trace 值，再独立要求 `verificationLevel=STATIC_CONTROL_PLANE`、`state=PROVISIONED`、`enabled=true`、`running=false`、`readiness.gateway=true` 和 `advertisedEndpoints.gateway` 存在；Release Governor 在无 Platform 工具权限的前提下核对同一组证据；Delivery Lead 复核后最终只返回 `PROVISIONED` 或 `BLOCKED`。`TRACE_CONTEXT_MISMATCH`、字段缺失或任一不等均失败关闭。
+
+用户给出的名称保留为展示用 `appName`。local/staging 的 Delivery Lead 必须把 ASCII 名称转为小写，将连续非字母数字字符替换为 `_`，去掉首尾 `_`，再补上经审批的 `goai_` grant 前缀；已有此前缀时不重复添加。例如 `psx_agent_teams_project` 固定映射为 `projectRef=goai_psx_agent_teams_project`。派生结果必须符合服务端 ref 语法且不超过 40 个字符，并在审批前冻结；空值、非 ASCII、超长或冲突都直接 `BLOCKED`，不得静默截断、换 ref 或重试创建。展示名与 ref 不得混用。
+
+Platform 采用服务端托管的默认 provisioning profile。任务和工具参数禁止携带 SQL、项目 key、Secret、custom upstream credential 或 upstream token；任何必填敏感输入、状态不一致、工具缺失或权限越界都必须输出 `BLOCKED`，不得绕过独立端点去调用 tenant SQL 或密钥工具。
+
+`PROVISIONED` 只证明 schema/RLS、默认 key 注册、平台 gateway catalog 等静态控制面配置满足契约。它不证明 Functions/MCP 外部可达，不证明模型 upstream HTTP 或计费调用成功，不证明应用已部署，也不表示生产可用。`advertisedEndpoints` 只是服务端公布的入口清单，不是健康探测结果；证据只能记录 `advertisedEndpoints.gateway` 是否存在，不能保存 endpoint 值。
 
 AgentTeams Worker 资源名与 Higress consumer 身份是两个不同命名域，policy 显式保存一一映射：
 
@@ -96,6 +110,6 @@ script/goai/install-agentteams.sh
 script/goai/install-agentteams.sh --apply
 ```
 
-`--apply` 只表示 AgentTeams 资源请求已提交，不表示 Worker 已就绪、MCP 已授权或业务流程已经通过验证。应用后还需要检查四个 Worker、Team、三条 MCP policy 和一条人工审批/回滚演示链路。
+`--apply` 只表示 AgentTeams 资源请求已提交，不表示 Worker 已就绪、MCP 已授权或业务流程已经通过验证。应用后还需要检查四个 Worker、Team、三个 tenant policy、两个 Platform policy，以及相应验收链路。
 
 Skill readiness 也必须单独验证：Manager workspace 中的四个 Skill 是持久 source，controller/helper 完成分发后，四个 Worker 必须分别能读取对应 `SKILL.md`，并与 source digest 一致。只看到 `spec.skills`、registry 记录或 `Running` 状态都不足以证明 Skill 可用。

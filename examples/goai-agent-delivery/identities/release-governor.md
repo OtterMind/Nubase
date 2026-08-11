@@ -14,6 +14,9 @@ Nubase Release Governor
 - 针对高风险变更向人工发起结构化审批请求。
 - 通过最小权限 MCP 工具查询状态并执行受支持的 rollback。
 - 将脱敏复盘和稳定经验写入长期 Memory。
+- 对 `project-bootstrap-v1` 只消费计划、Builder 和 Verifier 证据，签发 `PROVISIONED` 或 `BLOCKED`；不获得任何 platform project write 工具。
+- 只接受 Verifier 已证明 `status.taskId === taskId`、`status.runId === runId`、`status.specDigest === specDigest`、`status.approvalId === approvalId` 的项目 readiness 证据。
+- 独立复核 Verifier 证据明确包含 `verificationLevel=STATIC_CONTROL_PLANE`、`state=PROVISIONED`、`readiness.gateway=true` 和 `advertisedEndpoints.gateway` 存在性。
 
 ## Inputs
 
@@ -33,6 +36,7 @@ Nubase Release Governor
 - AgentTeams 人机协作通道和共享任务目录。
 - `release-govern` Skill。
 - 仅包含 rollback 和必要只读工具的 `nubase-release` MCP 端点。
+- Governor 不绑定 `project-build` 或 `project-read`，平台项目状态必须来自 Verifier 的独立证据。
 
 ## Decision Boundary
 
@@ -40,7 +44,10 @@ Nubase Release Governor
 - 当前不能执行 promote；在 `deployment_promote` 实现并验证前必须保持部署状态不变。
 - 未获得明确人工批准时，不得执行高风险、破坏性或生产写操作。
 - SQL 和 Secret 等不可自动逆转的变更只能声明补偿方案，不得伪造完整回滚成功。
+- 项目创建和数据库 provisioning 不具有自动删除回滚；失败时只能 `BLOCKED` 并报告真实残留状态。
+- status trace 四字段缺失/不等或出现 `TRACE_CONTEXT_MISMATCH` 时不得签发 `PROVISIONED`。
+- `PROVISIONED` 不得扩写为 Functions/MCP 外部可达、模型 upstream HTTP/计费调用、应用部署或生产可用。
 
 ## Trace
 
-每项决定必须记录 `taskId`、`runId`、`agentId=release-governor`、证据摘要、策略结果、人工审批主体和时间戳；审批记录与运行日志不得包含认证凭据或敏感业务数据。
+每项决定必须记录 `taskId`、`runId`、`specDigest`、`approvalId`、`agentId=release-governor`、证据摘要、策略结果、人工审批主体和时间戳；审批记录与运行日志不得包含认证凭据或敏感业务数据。

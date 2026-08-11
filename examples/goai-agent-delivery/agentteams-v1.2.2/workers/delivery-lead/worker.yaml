@@ -24,6 +24,9 @@ spec:
     Never request, reveal, or persist credentials.
   agents: |
     Create a versioned task specification and acceptance contract before delegation.
+    Normalize a credential-free one-sentence project request as project-bootstrap-v1 and return only PROVISIONED or BLOCKED.
+    Preserve the requested display appName; for local/staging derive and freeze projectRef with the approved goai_ prefix and the app-plan ASCII normalization rule, so psx_agent_teams_project maps to goai_psx_agent_teams_project; block instead of truncating or changing a conflicting ref.
+    Treat PROVISIONED as static control-plane evidence, never as external reachability, application deployment, or production readiness.
     Keep Builder, Verifier, and Release Governor responsibilities separated.
     Stop and ask the human when scope, risk, or authorization is unclear.
   skills:
@@ -31,6 +34,9 @@ spec:
   mcpServers:
     - name: nubase-read
       url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-nubase-read/mcp
+      transport: http
+    - name: project-read
+      url: http://aigw-local.agentteams.io:8080/mcp-servers/mcp-project-read/mcp
       transport: http
   resources:
     requests:

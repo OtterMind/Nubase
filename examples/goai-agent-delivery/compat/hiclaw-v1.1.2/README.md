@@ -18,12 +18,12 @@ HiClaw v1.1.2 的 Leader Skill 由 installer 直接写入 Leader 自身的 MinIO
 
 - `/root/manager-workspace` 必须绑定到一个专用、非符号链接目录；
 - `/host-share` 必须精确映射到 `examples/goai-agent-delivery/evidence/` 下的专用脱敏目录，并通过 `--host-share-root` 显式声明；
-- 三个 Nubase MCP 路由必须使用 sandbox credential 和精确 allowlist；
+- 三个 Nubase tenant MCP 路由与两个独立 Platform MCP 路由必须使用精确 allowlist；
 - Team 为 `Active`、四个 Worker 为 `Running`，且四个 Skill 的持久副本和运行副本均通过完整树摘要校验。
 
 HiClaw Worker 通过启用的 `mcporter` Skill 使用 MCP。运行验收必须由每个 Worker 执行实际 `mcporter` server/tool discovery，并分别证明允许调用成功、拒绝调用失败。CoPaw native MCP registry 计数不是本兼容链路的 readiness 证据；清单存在、URL 可达和路由配置成功也不能代替 Worker 身份下的调用证明。
 
-本机 Java MCP 工具集合变化后，只能使用仓库内的 reviewed refresh helper 更新三条路由。该 helper 固定本地 Console、三条 route、44 个工具、17/23/18 allowlist 和 2/1/1 consumer，并按“先收窄、再替换 consumer、最后开放目标集合”执行。`nubase-build` 的 Java route 同时拒绝 `executeSql` 与 `executeSqlDryRun`，不提供任何 SQL execution/dry-run；stdio bridge policy 保持独立且不受此次收敛影响：
+本机 Java MCP 工具集合变化后，只能使用仓库内的 reviewed refresh helper 更新三个 tenant 路由。该 helper 固定本地 Console、三个 route、44 个工具、17/23/18 allowlist 和 2/1/1 consumer，并按“先收窄、再替换 consumer、最后开放目标集合”执行。它不创建或修改独立的 `/platform/mcp` 路由。`nubase-build` 的 Java route 同时拒绝 `executeSql` 与 `executeSqlDryRun`，不提供任何 SQL execution/dry-run；stdio bridge policy 保持独立且不受此次收敛影响：
 
 ```bash
 cleanup_higress_refresh() {
@@ -45,6 +45,10 @@ docker exec hiclaw-controller env PYTHONDONTWRITEBYTECODE=1 \
 ```
 
 Session cookie 必须通过不进入 argv、shell history 或仓库的受控通道写入 controller，权限固定为 `0600`。无论刷新成功还是失败，上面的 trap 都会删除 cookie、helper 和 policy 临时副本；刷新后必须再次确认三者均不存在。
+
+`project-build` 和 `project-read` 必须由独立、经审阅的 Platform route installer 配置到 `/platform/mcp`。前者仅绑定 Builder consumer 并精确公开三个 Platform 工具；后者仅绑定 Delivery Lead、Verifier consumer 且只公开 status。Release Governor 不得获得任何 Platform route。完成配置后必须分别验证 exact 3-tool inventory、读写分区、允许调用与拒绝调用；成功 status 回显的 `taskId`、`runId`、`specDigest`、`approvalId` 必须与冻结计划逐字段相等。Verifier 与 Governor 还必须同时核对 `verificationLevel=STATIC_CONTROL_PLANE`、`state=PROVISIONED`、`readiness.gateway=true` 和 `advertisedEndpoints.gateway` 存在。`TRACE_CONTEXT_MISMATCH` 或字段缺失/不等均按 `BLOCKED` 处理，且不保存原始认证响应或 endpoint 值。
+
+该 `PROVISIONED` 结论只证明 schema/RLS、默认 key 注册与 gateway catalog 等静态控制面 provisioning。它不证明 Functions/MCP 外部可达、模型 upstream HTTP 或计费调用、应用部署或生产可用；路由本身可调用也不能扩大这条结论。
 
 不要运行会把上游 credential 放入 argv、把 Manager/全部 Worker 一次性授权的通用 setup helper。
 

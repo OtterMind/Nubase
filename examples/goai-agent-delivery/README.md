@@ -29,7 +29,7 @@ node examples/goai-agent-delivery/scripts/test-validator.mjs
 node examples/goai-agent-delivery/scripts/mcp-smoke.mjs
 ```
 
-These checks do not read `.env`, `.nubase`, the HiClaw workspace or a real Nubase project key. The validator extracts all 65 stdio tools and all 44 Java `@Tool` methods from source, then requires every role policy to classify its transport inventory exactly. The smoke test starts the stdio bridge with an isolated environment and performs local SQL risk classification only.
+These checks do not read `.env`, `.nubase`, the HiClaw workspace or a real Nubase project key. The validator extracts all 65 stdio tools and all 44 Java tenant MCP tools from source, keeps those inventories unchanged, and separately classifies the exact three-tool Platform MCP contract. The smoke test starts the stdio bridge with an isolated environment and performs local SQL risk classification only.
 
 ## AgentTeams Runtime
 
@@ -39,7 +39,7 @@ With a local AgentTeams or HiClaw Manager running, static validation and runtime
 bash script/goai/install-agentteams.sh
 ```
 
-After the three reviewed sandbox MCP routes are configured with runtime-only credentials, create a dedicated sanitized directory below `evidence/`, mount that exact directory at `/host-share`, and apply the detected manifest explicitly:
+After the three reviewed tenant routes and the two independent Platform MCP routes are configured with runtime-only authentication, create a dedicated sanitized directory below `evidence/`, mount that exact directory at `/host-share`, and apply the detected manifest explicitly:
 
 ```bash
 mkdir -p examples/goai-agent-delivery/evidence/demo-workspace
@@ -50,7 +50,13 @@ bash script/goai/install-agentteams.sh \
 
 The installer rejects any `/host-share` that does not exactly match the explicit directory, is outside `evidence/`, contains symlinks, or contains common credential material. Mount the dedicated demo directory read-only whenever the runtime permits it.
 
-An applied Team does not prove MCP authorization. The local Java HTTP routes must use each route's `javaHttpPolicy.allowTools` as the top-level Higress MCP `allowTools` field; it is not nested under `server`. A separately deployed stdio wrapper must instead use `stdioBridgePolicy` and its bridge guards. The transports use different tool names and their policies are not interchangeable.
+An applied Team does not prove MCP authorization. The local Java tenant routes must use each route's `javaHttpPolicy.allowTools` as the top-level Higress MCP `allowTools` field; it is not nested under `server`. A separately deployed stdio wrapper must instead use `stdioBridgePolicy` and its bridge guards. The independent `POST /platform/mcp` endpoint uses `platformHttpPolicy` and exactly `platformProjectCreate`, `platformProjectProvision`, and `platformProjectStatus`. These inventories and policies are not interchangeable.
+
+The reusable `project-bootstrap-v1` flow starts from one Element message such as “创建项目并配置数据库/网关”. Manager delegates in this order: Delivery Lead normalizes the request, Builder calls project create/provision through `project-build`, Verifier reads status through `project-read`, Release Governor decides from evidence without Platform MCP access, and Delivery Lead returns exactly `PROVISIONED` or `BLOCKED`. A successful decision requires `verificationLevel=STATIC_CONTROL_PLANE`, `state=PROVISIONED`, `readiness.gateway=true`, and an `advertisedEndpoints.gateway` entry. The status must also echo and exact-match `taskId`, `runId`, `specDigest`, and `approvalId`; missing or mismatched fields, including backend `TRACE_CONTEXT_MISMATCH` from the create/provision ledger chain, fail closed as `BLOCKED`. The flow never accepts SQL text, project keys, Secrets, custom upstream credentials, or upstream tokens.
+
+The requested project name remains the display `appName`. For the local/staging automation grant, Delivery Lead derives `projectRef` deterministically by lowercasing the ASCII name, replacing non-alphanumeric runs with `_`, trimming `_`, and prepending the reviewed `goai_` grant prefix unless already present. For example, `psx_agent_teams_project` maps to `goai_psx_agent_teams_project`. The result must match the server ref grammar, remain within 40 characters, and be frozen before approval; an empty, oversized, non-ASCII, or conflicting result is `BLOCKED` rather than silently truncated or retried under another ref.
+
+`PROVISIONED` proves only static control-plane provisioning such as required schema/RLS presence, default key registration, and an active configured gateway catalog. It does not prove external Functions or MCP reachability, an upstream model HTTP or billable call, application deployment, or production readiness. Advertised endpoint values are not runtime health evidence and must not be persisted in Agent evidence.
 
 HiClaw v1.1.2 also requires a top-level `tools: []` compatibility marker in proxy `rawConfigurations`; without the literal `tools:` field its Console SDK saves the MCP plugin instance as disabled. The empty marker does not define the proxied tools. The top-level `allowTools` list remains authoritative, and `tools/list` must equal it exactly after the route is applied.
 
