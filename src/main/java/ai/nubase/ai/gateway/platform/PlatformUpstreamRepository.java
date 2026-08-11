@@ -1,29 +1,31 @@
 package ai.nubase.ai.gateway.platform;
 
 import ai.nubase.common.enums.ApiProvider;
-import ai.nubase.postgrest.multidb.EncryptionService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.net.URI;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Metadata-DB access for platform-level unified upstreams
  * ({@code public.ai_gateway_platform_upstreams}).
  *
- * <p>The {@code auth_token} is encrypted at rest via {@link EncryptionService}; rows returned from
- * here carry the decrypted token in {@link PlatformUpstream#getAuthToken()} for server-side
- * forwarding only.</p>
+ * <p>The {@code auth_token} is encrypted at rest via {@link PlatformUpstreamCredentialCipher};
+ * rows returned from here carry the decrypted token in {@link PlatformUpstream#getAuthToken()} for
+ * server-side forwarding only.</p>
  */
 @Slf4j
 @Repository
@@ -35,15 +37,15 @@ public class PlatformUpstreamRepository {
             + "max_input_tokens, description, created_at, updated_at";
 
     private final JdbcTemplate metadataJdbcTemplate;
-    private final EncryptionService encryptionService;
+    private final PlatformUpstreamCredentialCipher credentialCipher;
     private final ObjectMapper objectMapper;
 
     public PlatformUpstreamRepository(
             @Qualifier("metadataJdbcTemplate") JdbcTemplate metadataJdbcTemplate,
-            EncryptionService encryptionService,
+            PlatformUpstreamCredentialCipher credentialCipher,
             ObjectMapper objectMapper) {
         this.metadataJdbcTemplate = metadataJdbcTemplate;
-        this.encryptionService = encryptionService;
+        this.credentialCipher = credentialCipher;
         this.objectMapper = objectMapper;
     }
 
@@ -66,6 +68,80 @@ public class PlatformUpstreamRepository {
                 (rs, rowNum) -> new CatalogModelSource(
                         ApiProvider.fromString(rs.getString("provider")),
                         fromJson(rs.getString("supported_models"))));
+    }
+
+    /**
+     * Returns only a readiness decision; no base URL, encrypted token, or model identifier leaves
+     * the metadata query. An active row is usable only when every routing prerequisite exists.
+     */
+    public boolean hasUsableActiveCatalogUpstream() {
+        AtomicBoolean available = new AtomicBoolean();
+        metadataJdbcTemplate.query("""
+                SELECT provider, base_url, auth_token_encrypted, supported_models
+                FROM public.ai_gateway_platform_upstreams
+                WHERE is_active = TRUE
+                ORDER BY priority ASC, id ASC
+                """, (RowCallbackHandler) row -> {
+                    if (!available.get() && isReadyCandidate(row)) {
+                        available.set(true);
+                    }
+                });
+        return available.get();
+    }
+
+    private boolean isReadyCandidate(ResultSet row) {
+        try {
+            String provider = row.getString("provider");
+            String baseUrl = row.getString("base_url");
+            String encryptedToken = row.getString("auth_token_encrypted");
+            List<String> models = fromJson(row.getString("supported_models"));
+            if (!knownProvider(provider)
+                    || !validBaseUrl(baseUrl)
+                    || !credentialCipher.isEncrypted(encryptedToken)
+                    || models.stream().noneMatch(PlatformUpstreamRepository::routableModel)) {
+                return false;
+            }
+            String token = credentialCipher.decrypt(encryptedToken);
+            return token != null && !token.isBlank();
+        } catch (Exception error) {
+            log.warn("Platform upstream readiness candidate rejected: errorType={}",
+                    error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private static boolean knownProvider(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        for (ApiProvider provider : ApiProvider.values()) {
+            if (provider.name().equalsIgnoreCase(value.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean validBaseUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(value.trim());
+            return uri.isAbsolute()
+                    && ("http".equalsIgnoreCase(uri.getScheme())
+                    || "https".equalsIgnoreCase(uri.getScheme()))
+                    && uri.getHost() != null
+                    && uri.getUserInfo() == null
+                    && uri.getQuery() == null
+                    && uri.getFragment() == null;
+        } catch (IllegalArgumentException invalid) {
+            return false;
+        }
+    }
+
+    private static boolean routableModel(String value) {
+        return value != null && !value.isBlank() && !"*".equals(value.trim());
     }
 
     public List<PlatformUpstream> findAll() {
@@ -167,7 +243,7 @@ public class PlatformUpstreamRepository {
             return null;
         }
         try {
-            return encryptionService.encrypt(plaintext);
+            return credentialCipher.encrypt(plaintext);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to encrypt platform upstream auth token", e);
         }
@@ -177,7 +253,11 @@ public class PlatformUpstreamRepository {
         if (encrypted == null || encrypted.isBlank()) {
             return null;
         }
-        return encryptionService.decryptIfEncrypted(encrypted);
+        try {
+            return credentialCipher.decrypt(encrypted);
+        } catch (Exception error) {
+            throw new IllegalStateException("Failed to decrypt platform upstream auth token", error);
+        }
     }
 
     private String toJson(List<String> models) {

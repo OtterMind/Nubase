@@ -1,10 +1,12 @@
 package ai.nubase.ai.gateway.platform;
 
 import ai.nubase.common.enums.ApiProvider;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -30,6 +32,8 @@ public class PlatformUpstream {
     private ApiProvider provider = ApiProvider.CLAUDE;
     private String baseUrl;
     /** Decrypted upstream API key (x-api-key). Never expose through admin read APIs. */
+    @JsonIgnore
+    @ToString.Exclude
     private String authToken;
     private String channelCode;
     @Builder.Default
