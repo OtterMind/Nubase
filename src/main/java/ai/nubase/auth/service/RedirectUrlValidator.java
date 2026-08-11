@@ -56,8 +56,11 @@ public class RedirectUrlValidator {
         }
         AuthConfig.RedirectSettings cfg = effectiveAuthConfig.redirect();
 
-        // Relative path (same-origin), but reject protocol-relative "//host".
-        if (redirectTo.startsWith("/") && !redirectTo.startsWith("//")) {
+        // Relative path (same-origin), but reject protocol-relative "//host" and
+        // backslashes, which browsers normalize to slashes for special URL schemes.
+        if (redirectTo.startsWith("/")
+                && !redirectTo.startsWith("//")
+                && redirectTo.indexOf('\\') < 0) {
             return true;
         }
 
