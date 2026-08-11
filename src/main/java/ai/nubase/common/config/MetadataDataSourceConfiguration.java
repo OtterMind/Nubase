@@ -13,7 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import javax.sql.DataSource;
 
 /**
- * Separate configuration for metadata database to avoid circular dependencies
+ * Separate configuration for the metadata database to avoid circular dependencies.
  * This configuration is loaded before MultiDatabaseConfiguration
  */
 @Slf4j
