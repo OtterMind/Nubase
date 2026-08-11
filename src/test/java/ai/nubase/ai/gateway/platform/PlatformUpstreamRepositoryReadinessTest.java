@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 
+import java.net.InetAddress;
 import java.sql.ResultSet;
 import java.util.List;
 
@@ -17,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,7 +33,14 @@ class PlatformUpstreamRepositoryReadinessTest {
         jdbcTemplate = mock(JdbcTemplate.class);
         credentialCipher = mock(PlatformUpstreamCredentialCipher.class);
         repository = new PlatformUpstreamRepository(
-                jdbcTemplate, credentialCipher, new ObjectMapper());
+                jdbcTemplate,
+                credentialCipher,
+                new ObjectMapper(),
+                false,
+                false,
+                host -> new InetAddress[] {
+                        InetAddress.getByAddress(new byte[] {8, 8, 8, 8})
+                });
     }
 
     @Test
@@ -95,6 +104,20 @@ class PlatformUpstreamRepositoryReadinessTest {
         invokeRows(plaintext, wildcard, unknown);
 
         assertThat(repository.hasUsableActiveCatalogUpstream()).isFalse();
+    }
+
+    @Test
+    void privateAddressCannotMakeGatewayReady() throws Exception {
+        ResultSet candidate = candidate(
+                "OPENAI",
+                "https://127.0.0.1/v1",
+                "encrypted-token",
+                "[\"model-a\"]");
+        when(credentialCipher.isEncrypted("encrypted-token")).thenReturn(true);
+        invokeRows(candidate);
+
+        assertThat(repository.hasUsableActiveCatalogUpstream()).isFalse();
+        verify(credentialCipher, never()).decrypt("encrypted-token");
     }
 
     @Test

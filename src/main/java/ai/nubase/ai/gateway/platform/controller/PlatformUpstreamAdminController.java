@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ConcurrentModificationException;
 import java.util.List;
 
 /**
@@ -48,7 +49,7 @@ public class PlatformUpstreamAdminController {
     @PostMapping
     public ResponseEntity<PlatformUpstreamResponse> create(@RequestBody PlatformUpstreamRequest req) {
         validate(req, true);
-        PlatformUpstream saved = repository.save(req.toEntity(null));
+        PlatformUpstream saved = save(req.toEntity(null));
         platformUpstreamService.refresh();
         return ResponseEntity.status(HttpStatus.CREATED).body(PlatformUpstreamResponse.from(saved));
     }
@@ -56,10 +57,11 @@ public class PlatformUpstreamAdminController {
     @PutMapping("/{id}")
     public ResponseEntity<PlatformUpstreamResponse> update(@PathVariable Long id,
                                                            @RequestBody PlatformUpstreamRequest req) {
-        repository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "platform upstream not found"));
+        if (!repository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "platform upstream not found");
+        }
         validate(req, false);
-        PlatformUpstream saved = repository.save(req.toEntity(id));
+        PlatformUpstream saved = save(req.toEntity(id));
         platformUpstreamService.refresh();
         return ResponseEntity.ok(PlatformUpstreamResponse.from(saved));
     }
@@ -76,6 +78,16 @@ public class PlatformUpstreamAdminController {
     public ResponseEntity<Void> refresh() {
         platformUpstreamService.refresh();
         return ResponseEntity.noContent().build();
+    }
+
+    private PlatformUpstream save(PlatformUpstream upstream) {
+        try {
+            return repository.save(upstream);
+        } catch (ConcurrentModificationException conflict) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, conflict.getMessage());
+        } catch (IllegalArgumentException invalid) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, invalid.getMessage());
+        }
     }
 
     private void validate(PlatformUpstreamRequest req, boolean creating) {

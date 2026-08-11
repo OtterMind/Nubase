@@ -4,7 +4,10 @@ import ai.nubase.postgrest.multidb.EncryptionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.crypto.AEADBadTagException;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
@@ -46,7 +49,7 @@ class PlatformUpstreamCredentialCipherTest {
 
         String encrypted = cipher.encrypt("platform-secret");
 
-        assertThat(encrypted).startsWith("ENCRYPTED:AES256:");
+        assertThat(encrypted).startsWith("ENCRYPTED:PLATFORM_UPSTREAM:V1:AES256_GCM:");
         assertThat(cipher.decrypt(encrypted)).isEqualTo("platform-secret");
         verify(fallback, never()).encrypt("platform-secret");
     }
@@ -77,7 +80,8 @@ class PlatformUpstreamCredentialCipherTest {
         assertThat(cipher.decrypt(encrypted)).isEqualTo("platform-secret");
         assertThatThrownBy(() -> cipher.decrypt("legacy-plaintext"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Platform upstream credential is not encrypted");
+                .hasMessage("Platform upstream credential could not be decrypted")
+                .hasNoCause();
     }
 
     @Test
@@ -91,8 +95,52 @@ class PlatformUpstreamCredentialCipherTest {
         String encrypted = writer.encrypt("platform-secret");
 
         assertThatThrownBy(() -> reader.decrypt(encrypted))
-                .isInstanceOf(AEADBadTagException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Platform upstream credential could not be decrypted")
+                .hasNoCause();
         verifyNoInteractions(fallback);
+    }
+
+    @Test
+    void legacyDedicatedCiphertextIsReadableButNewWritesUseVersionedPrefix() throws Exception {
+        EncryptionService fallback = mock(EncryptionService.class);
+        String key = randomKey();
+        PlatformUpstreamCredentialCipher cipher =
+                new PlatformUpstreamCredentialCipher(fallback, key, "");
+        String legacyCiphertext = encryptLegacyDedicated("platform-secret", key);
+
+        String plaintext = cipher.decrypt(legacyCiphertext);
+        String migrated = cipher.encrypt(plaintext);
+
+        assertThat(cipher.isEncrypted(legacyCiphertext)).isTrue();
+        assertThat(plaintext).isEqualTo("platform-secret");
+        assertThat(migrated)
+                .startsWith("ENCRYPTED:PLATFORM_UPSTREAM:V1:AES256_GCM:")
+                .doesNotStartWith("ENCRYPTED:AES256:");
+        verifyNoInteractions(fallback);
+    }
+
+    @Test
+    void decryptFailuresNeverExposeTheInputOrFallbackCause() throws Exception {
+        EncryptionService fallback = mock(EncryptionService.class);
+        String invalidInput = "credential-input-sentinel";
+        when(fallback.decrypt(invalidInput))
+                .thenThrow(new IllegalArgumentException("invalid: " + invalidInput));
+        PlatformUpstreamCredentialCipher fallbackCipher =
+                new PlatformUpstreamCredentialCipher(fallback, "", "");
+        PlatformUpstreamCredentialCipher dedicatedCipher =
+                new PlatformUpstreamCredentialCipher(mock(EncryptionService.class), randomKey(), "");
+
+        assertThatThrownBy(() -> fallbackCipher.decrypt(invalidInput))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Platform upstream credential could not be decrypted")
+                .hasMessageNotContaining(invalidInput)
+                .hasNoCause();
+        assertThatThrownBy(() -> dedicatedCipher.decrypt(invalidInput))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Platform upstream credential could not be decrypted")
+                .hasMessageNotContaining(invalidInput)
+                .hasNoCause();
     }
 
     @Test
@@ -117,5 +165,21 @@ class PlatformUpstreamCredentialCipherTest {
         byte[] key = new byte[32];
         new SecureRandom().nextBytes(key);
         return Base64.getEncoder().encodeToString(key);
+    }
+
+    private static String encryptLegacyDedicated(String plaintext, String encodedKey)
+            throws Exception {
+        byte[] iv = new byte[12];
+        new SecureRandom().nextBytes(iv);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(
+                Cipher.ENCRYPT_MODE,
+                new SecretKeySpec(Base64.getDecoder().decode(encodedKey), "AES"),
+                new GCMParameterSpec(128, iv));
+        byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+        byte[] combined = new byte[iv.length + ciphertext.length];
+        System.arraycopy(iv, 0, combined, 0, iv.length);
+        System.arraycopy(ciphertext, 0, combined, iv.length, ciphertext.length);
+        return "ENCRYPTED:AES256:" + Base64.getEncoder().encodeToString(combined);
     }
 }

@@ -17,14 +17,18 @@ import java.util.Base64;
 /**
  * Encrypts platform-upstream credentials in an optional, isolated key domain.
  *
- * <p>When no dedicated key is configured, all operations delegate to the existing tenant
+ * <p>When no dedicated key is configured, tenant-formatted operations delegate to the existing
  * credential encryption service. Once a dedicated key is configured, failures never fall back to
- * the tenant key: accepting either key would hide configuration drift and make writes ambiguous.</p>
+ * the tenant key: accepting either key would hide configuration drift and make writes ambiguous.
+ * Dedicated writes use a versioned prefix. Historical shared-prefix ciphertext is tried only with
+ * the dedicated key and is migrated by the repository on its next successful save.</p>
  */
 @Component
 public class PlatformUpstreamCredentialCipher {
 
-    private static final String ENCRYPTED_PREFIX = "ENCRYPTED:AES256:";
+    private static final String DEDICATED_PREFIX =
+            "ENCRYPTED:PLATFORM_UPSTREAM:V1:AES256_GCM:";
+    private static final String LEGACY_SHARED_PREFIX = "ENCRYPTED:AES256:";
     private static final String ALGORITHM = "AES/GCM/NoPadding";
     private static final int GCM_TAG_LENGTH = 128;
     private static final int GCM_IV_LENGTH = 12;
@@ -45,9 +49,13 @@ public class PlatformUpstreamCredentialCipher {
 
     boolean isEncrypted(String value) {
         if (dedicatedKey == null) {
-            return fallbackEncryptionService.isEncrypted(value);
+            return value != null
+                    && !value.startsWith(DEDICATED_PREFIX)
+                    && fallbackEncryptionService.isEncrypted(value);
         }
-        return value != null && value.startsWith(ENCRYPTED_PREFIX);
+        return value != null
+                && (value.startsWith(DEDICATED_PREFIX)
+                || value.startsWith(LEGACY_SHARED_PREFIX));
     }
 
     String encrypt(String plaintext) throws Exception {
@@ -68,20 +76,46 @@ public class PlatformUpstreamCredentialCipher {
         byte[] combined = new byte[iv.length + ciphertext.length];
         System.arraycopy(iv, 0, combined, 0, iv.length);
         System.arraycopy(ciphertext, 0, combined, iv.length, ciphertext.length);
-        return ENCRYPTED_PREFIX + Base64.getEncoder().encodeToString(combined);
+        return DEDICATED_PREFIX + Base64.getEncoder().encodeToString(combined);
     }
 
     String decrypt(String encryptedText) throws Exception {
+        if (encryptedText == null) {
+            return null;
+        }
         if (dedicatedKey == null) {
-            return fallbackEncryptionService.decrypt(encryptedText);
+            if (encryptedText.startsWith(DEDICATED_PREFIX)) {
+                throw decryptionFailure();
+            }
+            try {
+                return fallbackEncryptionService.decrypt(encryptedText);
+            } catch (Exception error) {
+                throw decryptionFailure();
+            }
         }
-        if (!isEncrypted(encryptedText)) {
-            throw new IllegalArgumentException("Platform upstream credential is not encrypted");
+
+        String payload;
+        if (encryptedText.startsWith(DEDICATED_PREFIX)) {
+            payload = encryptedText.substring(DEDICATED_PREFIX.length());
+        } else if (encryptedText.startsWith(LEGACY_SHARED_PREFIX)) {
+            // Legacy dedicated ciphertext used the tenant prefix. It is tried only with the
+            // dedicated key and is re-written with DEDICATED_PREFIX on the next repository save.
+            payload = encryptedText.substring(LEGACY_SHARED_PREFIX.length());
+        } else {
+            throw decryptionFailure();
         }
-        byte[] combined = Base64.getDecoder().decode(
-                encryptedText.substring(ENCRYPTED_PREFIX.length()));
+
+        try {
+            return decryptDedicatedPayload(payload);
+        } catch (Exception error) {
+            throw decryptionFailure();
+        }
+    }
+
+    private String decryptDedicatedPayload(String payload) throws Exception {
+        byte[] combined = Base64.getDecoder().decode(payload);
         if (combined.length <= GCM_IV_LENGTH) {
-            throw new IllegalArgumentException("Platform upstream credential is invalid");
+            throw decryptionFailure();
         }
         byte[] iv = new byte[GCM_IV_LENGTH];
         byte[] ciphertext = new byte[combined.length - GCM_IV_LENGTH];
@@ -90,6 +124,11 @@ public class PlatformUpstreamCredentialCipher {
         Cipher cipher = Cipher.getInstance(ALGORITHM);
         cipher.init(Cipher.DECRYPT_MODE, dedicatedKey, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
         return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
+    }
+
+    private static IllegalArgumentException decryptionFailure() {
+        return new IllegalArgumentException(
+                "Platform upstream credential could not be decrypted");
     }
 
     private static SecretKey loadDedicatedKey(String configuredKey, String configuredKeyFile) {
