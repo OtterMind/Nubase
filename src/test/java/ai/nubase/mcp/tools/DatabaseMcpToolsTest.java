@@ -7,9 +7,10 @@ import ai.nubase.common.context.MultiTenancyContext;
 import ai.nubase.common.enums.DatabaseInitStatus;
 import ai.nubase.mcp.safety.SqlRiskClassifier;
 import ai.nubase.postgrest.multidb.DatabaseConfig;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
@@ -54,6 +55,69 @@ class DatabaseMcpToolsTest {
     }
 
     @Test
+    void executeSqlBlocksDangerousSqlBeforeDatabaseAccess() {
+        setServiceRoleContextWithoutDatabase();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> response = (Map<String, Object>) tools.executeSql("drop table users");
+
+        assertThat(response).containsEntry("success", false);
+        assertThat(response).containsEntry("code", "DANGEROUS_SQL_BLOCKED");
+        assertThat(response).containsEntry("risk", "DANGEROUS");
+        assertThat(response).containsEntry("hasUnknown", false);
+        assertThat(response).containsEntry("statementCount", 1);
+        assertThat(response).containsEntry("executable", false);
+        verifyNoInteractions(sqlExecutionService);
+    }
+
+    @Test
+    void executeSqlBlocksAnyUnknownStatementBeforeDatabaseAccess() {
+        setServiceRoleContextWithoutDatabase();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> response = (Map<String, Object>) tools.executeSql("select 1; execute p");
+
+        assertThat(response).containsEntry("success", false);
+        assertThat(response).containsEntry("code", "UNCLASSIFIED_SQL_BLOCKED");
+        assertThat(response).containsEntry("risk", "READ");
+        assertThat(response).containsEntry("hasUnknown", true);
+        assertThat(response).containsEntry("statementCount", 2);
+        assertThat(response).containsEntry("executable", false);
+        verifyNoInteractions(sqlExecutionService);
+    }
+
+    @Test
+    void executeSqlReportsDangerousBeforeUnknown() {
+        setServiceRoleContextWithoutDatabase();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> response = (Map<String, Object>) tools.executeSql("drop table users; execute p");
+
+        assertThat(response).containsEntry("code", "DANGEROUS_SQL_BLOCKED");
+        assertThat(response).containsEntry("hasUnknown", true);
+        verifyNoInteractions(sqlExecutionService);
+    }
+
+    @Test
+    void dangerousEnvironmentOverrideAllowsServerExecutionPath() {
+        new ApplicationContextRunner()
+                .withPropertyValues("NUBASE_ALLOW_DANGEROUS_SQL=true")
+                .withBean(DatabaseMcpTools.class, () -> new DatabaseMcpTools(
+                        null, mock(SqlExecutionService.class), null, null, new SqlRiskClassifier()))
+                .run(context -> {
+                    setServiceRoleContextWithoutDatabase();
+
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> response = (Map<String, Object>) context.getBean(DatabaseMcpTools.class)
+                            .executeSql("drop table users");
+
+                    assertThat(response).doesNotContainKey("code");
+                    assertThat(response).containsEntry(
+                            "error", "Database context not found, please ensure the database is initialized");
+                });
+    }
+
+    @Test
     void initDatabaseWithServiceRoleStillRequiresDatabaseContext() {
         MultiTenancyContext.setContext(MultiTenancyContext.ContextData.builder()
                 .appCode("demo")
@@ -93,6 +157,23 @@ class DatabaseMcpToolsTest {
         assertThat(response).containsEntry("risk", "DANGEROUS");
         assertThat(response).containsEntry("executable", false);
         assertThat(response).containsEntry("blocked", true);
+        assertThat(response).containsEntry("code", "DANGEROUS_SQL_BLOCKED");
+        assertThat(response).containsEntry("hasUnknown", false);
+        verifyNoInteractions(sqlExecutionService);
+    }
+
+    @Test
+    void executeSqlDryRunMarksUnknownSqlNotExecutable() {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> response = (Map<String, Object>) tools.executeSqlDryRun("execute p");
+
+        assertThat(response).containsEntry("success", true);
+        assertThat(response).containsEntry("risk", "UNKNOWN");
+        assertThat(response).containsEntry("hasUnknown", true);
+        assertThat(response).containsEntry("statementCount", 1);
+        assertThat(response).containsEntry("executable", false);
+        assertThat(response).containsEntry("blocked", true);
+        assertThat(response).containsEntry("code", "UNCLASSIFIED_SQL_BLOCKED");
         verifyNoInteractions(sqlExecutionService);
     }
 
@@ -140,6 +221,15 @@ class DatabaseMcpToolsTest {
                         .dbSchemas(List.of("public"))
                         .initStatus(DatabaseInitStatus.INITIALIZED.name())
                         .build())
+                .build());
+    }
+
+    private void setServiceRoleContextWithoutDatabase() {
+        MultiTenancyContext.setContext(MultiTenancyContext.ContextData.builder()
+                .appCode("demo")
+                .schemaName("public")
+                .jwtSecret("test-secret-key-at-least-32-bytes-long")
+                .serviceRole(true)
                 .build());
     }
 }

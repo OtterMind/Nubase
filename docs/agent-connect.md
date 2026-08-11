@@ -155,7 +155,7 @@ NUBASE_ALLOW_SQL_EXECUTE=true
 NUBASE_ALLOW_DANGEROUS_SQL=false
 ```
 
-Dangerous SQL such as `drop` or `truncate` remains blocked unless `NUBASE_ALLOW_DANGEROUS_SQL=true`.
+Dangerous SQL such as `drop` or `truncate`, plus SQL the classifier cannot safely identify, remains blocked unless `NUBASE_ALLOW_DANGEROUS_SQL=true`. Unclassified SQL uses the distinct `UNCLASSIFIED_SQL_BLOCKED` error code.
 
 Every successful schema-changing `sql_execute` is recorded to an append-only `nubase.migrations` audit table (timestamp, risk, SQL text, agent/run/user). Review it with the `db_list_migrations` tool, or disable the trail with `NUBASE_RECORD_MIGRATIONS=false`.
 
@@ -323,4 +323,3 @@ When the task is to **deploy** a generated app, continue (deploy tools need `NUB
 9. Write durable decisions (schema, deployed functions, asset paths, cron jobs) with `memory_write`.
 
 See [Deploy an AI-generated app](deploy-ai-generated-apps.md) for the full walkthrough.
-
