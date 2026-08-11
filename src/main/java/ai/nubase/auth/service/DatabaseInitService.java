@@ -157,6 +157,8 @@ public class DatabaseInitService {
     private static final String INIT_ASSETS_SCHEMA_SQL = "db/supabase/init_assets_schema.sql";
     private static final String INIT_ROLES_SQL = "db/supabase/init_roles.sql";
 
+    public static final String PROJECT_REF_EXISTS = "PROJECT_REF_EXISTS";
+
     /**
      * Phase one: create the database configuration (does not initialize the physical database).
      * Status: pending_init
@@ -166,6 +168,22 @@ public class DatabaseInitService {
      * 3. Return the configuration information
      */
     public InitDatabaseResponse createDatabaseConfig(InitDatabaseRequest request) {
+        return createDatabaseConfig(request, false);
+    }
+
+    /**
+     * Create-only variant for platform automation.
+     *
+     * <p>Unlike the legacy Studio path, this method never updates an existing row. Concurrent
+     * attempts for the same project reference are resolved by PostgreSQL's unique constraint and
+     * reported with the stable {@link #PROJECT_REF_EXISTS} code.</p>
+     */
+    public InitDatabaseResponse createDatabaseConfigIfAbsent(InitDatabaseRequest request) {
+        return createDatabaseConfig(request, true);
+    }
+
+    private InitDatabaseResponse createDatabaseConfig(
+            InitDatabaseRequest request, boolean createOnly) {
         long startTime = System.currentTimeMillis();
         List<String> executedSteps = new ArrayList<>();
 
@@ -183,7 +201,7 @@ public class DatabaseInitService {
 
             // Reject a duplicate reference instead of silently returning the existing project — the
             // caller (Studio "New project") surfaces this so the user can pick a different reference.
-            DatabaseConfig config = databaseConfigRepository.findByDbKey(dbKey);
+            DatabaseConfig config = createOnly ? null : databaseConfigRepository.findByDbKey(dbKey);
             if (config != null) {
                 return InitDatabaseResponse.error(
                         "A project with reference '" + dbKey + "' already exists. Choose a different reference.",
@@ -221,7 +239,15 @@ public class DatabaseInitService {
             databaseConfig.setEnabled(false);
 
             // Save the configuration to database_configs
-            databaseConfigRepository.save(databaseConfig);
+            if (createOnly && !databaseConfigRepository.insertIfAbsent(databaseConfig)) {
+                return InitDatabaseResponse.error(
+                        "A project with reference '" + dbKey + "' already exists.",
+                        PROJECT_REF_EXISTS,
+                        System.currentTimeMillis() - startTime);
+            }
+            if (!createOnly) {
+                databaseConfigRepository.save(databaseConfig);
+            }
             executedSteps.add("Saved configuration to database_configs (status: pending_init)");
 
             long executionTime = System.currentTimeMillis() - startTime;

@@ -92,6 +92,33 @@ class DatabaseInitServiceClaimTest {
     }
 
     @Test
+    void createOnlyUsesAtomicInsertAndReturnsStableReferenceConflict() {
+        DatabaseConfigRepository repository = mock(DatabaseConfigRepository.class);
+        when(repository.insertIfAbsent(any(DatabaseConfig.class))).thenReturn(false);
+        DatabaseInitService service = new DatabaseInitService(
+                repository,
+                mock(EncryptionService.class),
+                mock(DefaultGatewayKeyProvisioner.class),
+                mock(ProjectProvisioningLeaseService.class),
+                mock(JdbcTemplate.class));
+        ReflectionTestUtils.setField(service, "postgresHost", "localhost");
+        ReflectionTestUtils.setField(service, "postgresPort", 5432);
+        InitDatabaseRequest request = new InitDatabaseRequest();
+        request.setDbKey("goai_notes");
+        request.setDbName("goai_notes");
+        request.setAppCode("goai_notes");
+        request.setAppName("Notes");
+
+        InitDatabaseResponse response = service.createDatabaseConfigIfAbsent(request);
+
+        assertThat(response.isSuccess()).isFalse();
+        assertThat(response.getErrorDetails()).isEqualTo(DatabaseInitService.PROJECT_REF_EXISTS);
+        verify(repository).insertIfAbsent(any(DatabaseConfig.class));
+        verify(repository, never()).findByDbKey(anyString());
+        verify(repository, never()).save(any(DatabaseConfig.class));
+    }
+
+    @Test
     void provisionsDefaultGatewayKeyBeforePublishingSuccessAndEnabledState() {
         DefaultGatewayKeyProvisioner keyProvisioner = mock(DefaultGatewayKeyProvisioner.class);
         DatabaseInitService service = new DatabaseInitService(

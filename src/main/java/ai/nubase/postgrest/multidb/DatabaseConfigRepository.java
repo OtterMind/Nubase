@@ -148,25 +148,7 @@ public class DatabaseConfigRepository {
     @CacheEvict(value = "databaseConfigs", key = "#config.dbKey")
     public void save(DatabaseConfig config) {
         log.info("Saving database configuration for: {}", config.getDbKey());
-
-        // Validate configuration
-        config.validate();
-
-        // Encrypt sensitive data if not already encrypted
-        try {
-            if (!encryptionService.isEncrypted(config.getDbPasswordEncrypted())) {
-                config.setDbPasswordEncrypted(encryptionService.encrypt(config.getDbPasswordEncrypted()));
-            }
-
-            if (config.getJwtSecretEncrypted() != null &&
-                    !encryptionService.isEncrypted(config.getJwtSecretEncrypted())) {
-                config.setJwtSecretEncrypted(encryptionService.encrypt(config.getJwtSecretEncrypted()));
-            }
-        } catch (Exception e) {
-            log.error("Failed to encrypt sensitive data for database: {}, errorType={}",
-                    config.getDbKey(), errorType(e));
-            throw new IllegalStateException("Failed to encrypt database configuration");
-        }
+        prepareForPersistence(config);
 
         // Check if exists
         Integer count = metadataJdbcTemplate.queryForObject(
@@ -180,10 +162,50 @@ public class DatabaseConfigRepository {
             updateConfig(config);
         } else {
             // Insert new
-            insertConfig(config);
+            insertConfig(config, false);
         }
 
         log.info("Successfully saved database configuration for: {}", config.getDbKey());
+    }
+
+    /**
+     * Atomically insert a new database configuration without updating an existing project.
+     *
+     * <p>This is the create-only persistence boundary used by platform automation. The existing
+     * {@link #save(DatabaseConfig)} method intentionally retains its upsert behavior for Studio and
+     * legacy callers. PostgreSQL resolves concurrent creates for the same {@code db_key}; the loser
+     * receives {@code false} and never reaches an update path.</p>
+     */
+    @CacheEvict(value = "databaseConfigs", key = "#config.dbKey")
+    public boolean insertIfAbsent(DatabaseConfig config) {
+        log.info("Creating database configuration if absent for: {}", config.getDbKey());
+        prepareForPersistence(config);
+        boolean inserted = insertConfig(config, true) == 1;
+        if (inserted) {
+            log.info("Created database configuration for: {}", config.getDbKey());
+        } else {
+            log.info("Database configuration already exists for: {}", config.getDbKey());
+        }
+        return inserted;
+    }
+
+    private void prepareForPersistence(DatabaseConfig config) {
+        config.validate();
+
+        try {
+            if (!encryptionService.isEncrypted(config.getDbPasswordEncrypted())) {
+                config.setDbPasswordEncrypted(encryptionService.encrypt(config.getDbPasswordEncrypted()));
+            }
+
+            if (config.getJwtSecretEncrypted() != null
+                    && !encryptionService.isEncrypted(config.getJwtSecretEncrypted())) {
+                config.setJwtSecretEncrypted(encryptionService.encrypt(config.getJwtSecretEncrypted()));
+            }
+        } catch (Exception e) {
+            log.error("Failed to encrypt sensitive data for database: {}, errorType={}",
+                    config.getDbKey(), errorType(e));
+            throw new IllegalStateException("Failed to encrypt database configuration");
+        }
     }
 
     /**
@@ -549,7 +571,7 @@ public class DatabaseConfigRepository {
         metadataJdbcTemplate.update(sql, enabled, dbKey);
     }
 
-    private void insertConfig(DatabaseConfig config) {
+    private int insertConfig(DatabaseConfig config, boolean ignoreDbKeyConflict) {
         String sql = """
                 INSERT INTO public.database_configs (
                     db_key, db_name, description,
@@ -561,10 +583,10 @@ public class DatabaseConfigRepository {
                     enabled, created_by,app_code, app_name, schema_name, jwt_secret, service_role_token, oauth_config,authenticated_token,
                     init_status, init_message
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?)
-                """;
+                """ + (ignoreDbKeyConflict ? " ON CONFLICT (db_key) DO NOTHING" : "");
 
 
-        metadataJdbcTemplate.update(sql,
+        return metadataJdbcTemplate.update(sql,
                 config.getDbKey(),
                 config.getDbName(),
                 config.getDescription(),
