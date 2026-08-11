@@ -46,7 +46,19 @@ public final class PlatformAdminPaths {
     }
 
     public static boolean skipsTenantMultitenancy(String requestPath) {
-        return matchesAny(TENANT_MULTITENANCY_SKIP_PATHS, requestPath);
+        return isPlatformMcpPath(requestPath)
+                || matchesAny(TENANT_MULTITENANCY_SKIP_PATHS, requestPath);
+    }
+
+    /**
+     * Exact independent platform MCP endpoint, including an optional trailing slash or
+     * servlet matrix parameters. It must not classify similarly named paths such as
+     * {@code /platform/mcpx}, and it is deliberately not an AdminInitAuthFilter path.
+     */
+    public static boolean isPlatformMcpPath(String requestPath) {
+        return "/platform/mcp".equals(requestPath)
+                || "/platform/mcp/".equals(requestPath)
+                || requestPath != null && requestPath.startsWith("/platform/mcp;");
     }
 
     public static boolean requiresSuperAdmin(String requestPath) {

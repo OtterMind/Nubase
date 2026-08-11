@@ -124,6 +124,12 @@ zenmux:
 
 # Supabase Auth configuration
 nubase:
+  platform-mcp:
+    # Independent automation control plane. It is intentionally off unless an operator
+    # provisions grants and an isolated signing secret, then explicitly enables it.
+    enabled: ${NUBASE_PLATFORM_MCP_ENABLED:false}
+    jwt-secret: ${NUBASE_PLATFORM_MCP_JWT_SECRET:}
+    public-base-url: ${NUBASE_PUBLIC_URL:http://localhost:9999}
   # Browser API calls are header-authenticated, so wildcard origins remain compatible without
   # credentials. Credentialed cross-origin requests require an explicit origin allowlist.
   cors:

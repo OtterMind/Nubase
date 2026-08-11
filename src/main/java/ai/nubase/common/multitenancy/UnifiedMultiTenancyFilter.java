@@ -73,6 +73,7 @@ import java.util.*;
 public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
     private static final Logger MCP_LOG = LoggerFactory.getLogger("McpLogger");
     private static final String MCP_SAFE_REQUEST_PATH = "/mcp";
+    private static final String PLATFORM_MCP_SAFE_REQUEST_PATH = "/platform/mcp";
     private static final String PROJECT_REF_HEADER = "x-nubase-project-ref";
     private final DatabaseConfigRepository databaseConfigRepository;
     private final RoutingDataSource routingDataSource;
@@ -112,7 +113,11 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         String requestPath = request.getRequestURI();
         boolean mcpRequest = isMcpRequest(requestPath);
-        String requestPathForLogging = mcpRequest ? MCP_SAFE_REQUEST_PATH : requestPath;
+        String requestPathForLogging = mcpRequest
+                ? MCP_SAFE_REQUEST_PATH
+                : PlatformAdminPaths.isPlatformMcpPath(requestPath)
+                        ? PLATFORM_MCP_SAFE_REQUEST_PATH
+                        : requestPath;
         if (!requestPath.contains("/auth/v1/health")) {
             log.info("Processing request (unified multitenancy): {} {}",
                     request.getMethod(), requestPathForLogging);

@@ -45,6 +45,9 @@ import java.util.Arrays;
 @Order(1) // Executes before UnifiedMultiTenancyFilter
 public class AdminInitAuthFilter extends OncePerRequestFilter {
 
+    public static final String METADATA_ROOT_AUTHENTICATED_ATTRIBUTE =
+            AdminInitAuthFilter.class.getName() + ".metadataRootAuthenticated";
+
     /** The default placeholder shipped in application.yml — must never be the live value in prod. */
     private static final String PLACEHOLDER_KEY = "replace-me-with-a-real-jwt-signed-by-master-key";
 
@@ -141,6 +144,7 @@ public class AdminInitAuthFilter extends OncePerRequestFilter {
                 // The root key is not a human user; it acts as the reserved system user so that
                 // downstream code always sees a concrete platformUserId (never null).
                 resolvedUserId = PlatformAuthService.SYSTEM_USER_ID;
+                request.setAttribute(METADATA_ROOT_AUTHENTICATED_ATTRIBUTE, Boolean.TRUE);
             }
             if (!accepted) {
                 log.warn("Admin init request with invalid token: {}", requestPath);

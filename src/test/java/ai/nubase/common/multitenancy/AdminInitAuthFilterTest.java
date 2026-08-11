@@ -43,6 +43,8 @@ class AdminInitAuthFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(request.getAttribute("platformUserId")).isEqualTo(PlatformAuthService.SYSTEM_USER_ID);
+        assertThat(request.getAttribute(AdminInitAuthFilter.METADATA_ROOT_AUTHENTICATED_ATTRIBUTE))
+                .isEqualTo(Boolean.TRUE);
         assertThat(request.getAttribute("platformIsSuperAdmin")).isEqualTo(true);
     }
 
@@ -93,6 +95,26 @@ class AdminInitAuthFilterTest {
         assertThat(request.getAttribute("platformUserId"))
                 .isEqualTo(UUID.fromString("11111111-1111-1111-1111-111111111111"));
         assertThat(request.getAttribute("platformIsSuperAdmin")).isEqualTo(false);
+    }
+
+    @Test
+    void platformJwtWithSystemSubjectDoesNotGainMetadataRootCredentialKind() throws Exception {
+        var request = platformRequest(
+                "POST", "/auth/v1/admin/platform/automation-grants", "platform-jwt");
+        when(platformAuthService.resolvePrincipal("platform-jwt"))
+                .thenReturn(new PlatformAuthService.PlatformPrincipal(
+                        PlatformAuthService.SYSTEM_USER_ID,
+                        true,
+                        PlatformAuthService.PLATFORM_ROLE_SUPER_ADMIN));
+        var response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(request.getAttribute("platformUserId"))
+                .isEqualTo(PlatformAuthService.SYSTEM_USER_ID);
+        assertThat(request.getAttribute(AdminInitAuthFilter.METADATA_ROOT_AUTHENTICATED_ATTRIBUTE))
+                .isNull();
     }
 
     @Test

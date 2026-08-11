@@ -2,6 +2,7 @@ package ai.nubase.common.config;
 
 import ai.nubase.ai.gateway.filter.GatewayApiKeyAuthFilter;
 import ai.nubase.ai.gateway.billing.BillingAdmissionFilter;
+import ai.nubase.common.multitenancy.PlatformAdminPaths;
 import ai.nubase.common.multitenancy.UnifiedMultiTenancyFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -60,6 +61,10 @@ public class SecurityConfig {
                         .requestMatchers("/storage/v1/**").permitAll()
                         // MCP service endpoints
                         .requestMatchers("/mcp/**").permitAll()
+                        // Independent platform MCP. Its automation filter owns authentication;
+                        // when disabled no controller is registered and this resolves to 404.
+                        .requestMatchers(request ->
+                                PlatformAdminPaths.isPlatformMcpPath(request.getRequestURI())).permitAll()
                         // AI Gateway DATA PLANE (authenticated by GatewayApiKeyAuthFilter via nbk_ keys)
                         .requestMatchers("/v1/**").permitAll()
                         .requestMatchers("/ai/**").permitAll()
