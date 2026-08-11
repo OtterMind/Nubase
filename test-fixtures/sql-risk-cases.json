@@ -1,0 +1,315 @@
+[
+  {
+    "name": "simple select",
+    "sql": "SELECT * FROM users",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "parenthesized select",
+    "sql": "(SELECT 1)",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "read-only CTE",
+    "sql": "WITH recent AS (SELECT * FROM users) SELECT * FROM recent",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "data-modifying CTE full delete",
+    "sql": "WITH deleted AS (DELETE FROM users RETURNING *) SELECT * FROM deleted",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "data-modifying CTE qualified delete",
+    "sql": "WITH deleted AS (DELETE FROM users WHERE id = 1 RETURNING *) SELECT * FROM deleted",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "data-modifying CTE update",
+    "sql": "WITH changed AS (UPDATE users SET active = true WHERE id = 1 RETURNING *) SELECT * FROM changed",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+
+  {
+    "name": "explain does not execute delete",
+    "sql": "EXPLAIN DELETE FROM users",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "explain analyze full delete",
+    "sql": "EXPLAIN ANALYZE DELETE FROM users",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "explain option list analyze full delete",
+    "sql": "EXPLAIN (ANALYZE, BUFFERS) DELETE FROM users",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "explain analyze qualified delete",
+    "sql": "EXPLAIN ANALYZE DELETE FROM users WHERE id = 1",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "explain analyze select",
+    "sql": "EXPLAIN (ANALYZE TRUE, BUFFERS TRUE) SELECT * FROM users",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+
+  {
+    "name": "full delete",
+    "sql": "DELETE FROM users",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "full delete with returning",
+    "sql": "DELETE FROM users RETURNING *",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "full delete using nested where only",
+    "sql": "DELETE FROM users USING (SELECT id FROM stale WHERE expired) s RETURNING users.*",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "qualified delete using",
+    "sql": "DELETE FROM users USING stale WHERE users.id = stale.id",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "qualified delete",
+    "sql": "DELETE FROM users WHERE id = 1 RETURNING *",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "insert",
+    "sql": "INSERT INTO users(name) VALUES ('Ada')",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "schema write",
+    "sql": "ALTER TABLE users ADD COLUMN active boolean",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "drop",
+    "sql": "DROP TABLE users",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+
+  {
+    "name": "standard string semicolon",
+    "sql": "SELECT 'DELETE FROM users; still text'",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "escape string semicolon",
+    "sql": "SELECT E'a;\\\\b'",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "quoted identifier semicolon",
+    "sql": "SELECT \"odd;name\" FROM users",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "dollar quote semicolon",
+    "sql": "SELECT $tag$DROP TABLE users;$tag$",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "line comment hides semicolon",
+    "sql": "SELECT 1 -- ; DROP TABLE users",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "nested block comment hides semicolons",
+    "sql": "SELECT /* outer ; /* inner DROP TABLE users; */ still ; */ 1",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "unterminated string stays opaque",
+    "sql": "SELECT 'DELETE FROM users;",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+
+  {
+    "name": "do block is dangerous and one statement",
+    "sql": "DO $$ BEGIN DELETE FROM users; END $$",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "begin",
+    "sql": "BEGIN",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "start transaction",
+    "sql": "START TRANSACTION",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "commit",
+    "sql": "COMMIT",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "rollback",
+    "sql": "ROLLBACK",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "set",
+    "sql": "SET search_path = public",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "reset",
+    "sql": "RESET search_path",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "analyze",
+    "sql": "ANALYZE users",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "vacuum",
+    "sql": "VACUUM users",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "vacuum full",
+    "sql": "VACUUM FULL users",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "refresh materialized view",
+    "sql": "REFRESH MATERIALIZED VIEW mv",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "lock table",
+    "sql": "LOCK TABLE users",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+
+  {
+    "name": "prepare remains unknown",
+    "sql": "PREPARE p AS DELETE FROM users",
+    "risk": "UNKNOWN",
+    "statementCount": 1,
+    "hasUnknown": true
+  },
+  {
+    "name": "execute remains unknown",
+    "sql": "EXECUTE p",
+    "risk": "UNKNOWN",
+    "statementCount": 1,
+    "hasUnknown": true
+  },
+  {
+    "name": "unknown is sticky beside read",
+    "sql": "SELECT 1; EXECUTE p",
+    "risk": "READ",
+    "statementCount": 2,
+    "hasUnknown": true
+  },
+  {
+    "name": "do block in mixed batch",
+    "sql": "SELECT 1; DO $$ BEGIN DELETE FROM users; END $$",
+    "risk": "DANGEROUS",
+    "statementCount": 2,
+    "hasUnknown": false
+  },
+  {
+    "name": "highest known risk is retained",
+    "sql": "SELECT 1; CREATE TABLE notes(id bigint); UPDATE users SET active = false",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 3,
+    "hasUnknown": false
+  },
+  {
+    "name": "blank input",
+    "sql": "   ",
+    "risk": "UNKNOWN",
+    "statementCount": 0,
+    "hasUnknown": false
+  }
+]
