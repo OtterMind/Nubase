@@ -3,9 +3,11 @@ package ai.nubase.platform.mcp;
 import ai.nubase.auth.service.PlatformAuthService;
 import ai.nubase.common.multitenancy.AdminInitAuthFilter;
 import ai.nubase.platform.mcp.AutomationGrantAdminService.CreateGrantRequest;
+import ai.nubase.platform.mcp.AutomationGrantAdminService.MintTokenRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 
 import java.util.UUID;
 
@@ -78,7 +80,27 @@ class AutomationGrantAdminControllerTest {
         var response = controller.create(body, request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store");
+        assertThat(response.getHeaders().getFirst(HttpHeaders.PRAGMA)).isEqualTo("no-cache");
         verify(grantAdminService).createGrant(body);
+    }
+
+    @Test
+    void mintedTokenResponseAlsoDisablesCaching() {
+        UUID grantId = UUID.randomUUID();
+        MintTokenRequest body = new MintTokenRequest("read", 300);
+        when(request.getHeader("Authorization")).thenReturn("Bearer metadata-root-key");
+        when(request.getAttribute("platformUserId"))
+                .thenReturn(PlatformAuthService.SYSTEM_USER_ID);
+        when(request.getAttribute(AdminInitAuthFilter.METADATA_ROOT_AUTHENTICATED_ATTRIBUTE))
+                .thenReturn(Boolean.TRUE);
+
+        var response = controller.mint(grantId, body, request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store");
+        assertThat(response.getHeaders().getFirst(HttpHeaders.PRAGMA)).isEqualTo("no-cache");
+        verify(grantAdminService).mintToken(grantId, body);
     }
 
     private static CreateGrantRequest createRequest() {

@@ -20,7 +20,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "automation_project_operations",
         uniqueConstraints = @UniqueConstraint(name = "uq_automation_project_operation",
-                columnNames = {"actor", "action", "idempotency_key"}))
+                columnNames = {"grant_id", "actor", "action", "idempotency_key"}))
 public class AutomationProjectOperation {
 
     @Id
@@ -67,6 +67,22 @@ public class AutomationProjectOperation {
 
     @Column(name = "token_jti", nullable = false, length = 128)
     private String tokenJti;
+
+    @Column(name = "token_version", nullable = false)
+    private Long tokenVersion;
+
+    @Builder.Default
+    @Column(name = "attempt_count", nullable = false)
+    private Integer attemptCount = 0;
+
+    @Column(name = "next_attempt_at", nullable = false)
+    private Instant nextAttemptAt;
+
+    @Column(name = "claim_token")
+    private UUID claimToken;
+
+    @Column(name = "claimed_until")
+    private Instant claimedUntil;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

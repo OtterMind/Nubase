@@ -130,6 +130,9 @@ nubase:
     enabled: ${NUBASE_PLATFORM_MCP_ENABLED:false}
     jwt-secret: ${NUBASE_PLATFORM_MCP_JWT_SECRET:}
     public-base-url: ${NUBASE_PUBLIC_URL:http://localhost:9999}
+    # Browser Origin values allowed to reach /platform/mcp. Non-browser clients may omit Origin.
+    # Keep empty unless browser-based MCP clients are explicitly required.
+    allowed-origins: ${NUBASE_PLATFORM_MCP_ALLOWED_ORIGINS:}
   # Browser API calls are header-authenticated, so wildcard origins remain compatible without
   # credentials. Credentialed cross-origin requests require an explicit origin allowlist.
   cors:

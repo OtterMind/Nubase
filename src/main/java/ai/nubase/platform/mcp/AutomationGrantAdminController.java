@@ -7,6 +7,7 @@ import ai.nubase.platform.mcp.AutomationGrantAdminService.MintTokenRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,7 +34,7 @@ public class AutomationGrantAdminController {
         ResponseEntity<?> denied = requireMetadataRoot(request);
         if (denied != null) return denied;
         try {
-            return ResponseEntity.status(HttpStatus.CREATED)
+            return sensitiveResponse(HttpStatus.CREATED)
                     .body(grantAdminService.createGrant(body));
         } catch (PlatformMcpOperationException e) {
             return fixedError(HttpStatus.BAD_REQUEST, e.code());
@@ -48,7 +49,8 @@ public class AutomationGrantAdminController {
         ResponseEntity<?> denied = requireMetadataRoot(request);
         if (denied != null) return denied;
         try {
-            return ResponseEntity.ok(grantAdminService.mintToken(grantId, body));
+            return sensitiveResponse(HttpStatus.OK)
+                    .body(grantAdminService.mintToken(grantId, body));
         } catch (PlatformMcpOperationException e) {
             return fixedError(HttpStatus.BAD_REQUEST, e.code());
         }
@@ -84,5 +86,11 @@ public class AutomationGrantAdminController {
     private static ResponseEntity<Map<String, String>> fixedError(
             HttpStatus status, String code) {
         return ResponseEntity.status(status).body(Map.of("error", code));
+    }
+
+    private static ResponseEntity.BodyBuilder sensitiveResponse(HttpStatus status) {
+        return ResponseEntity.status(status)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header(HttpHeaders.PRAGMA, "no-cache");
     }
 }
