@@ -141,7 +141,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = ErrorResponse.of(
                 "server_error",
-                "An unexpected error occurred"+ex.getMessage()
+                "An unexpected error occurred: " + ex.getMessage()
         );
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
