@@ -48,9 +48,4 @@ public class PasswordService {
         }
     }
 
-    public static void main(String[] args) {
-       String j = BCrypt.hashpw("123456", BCrypt.gensalt(12));
-
-        System.out.println(j);
-    }
 }

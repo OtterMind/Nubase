@@ -28,12 +28,14 @@ class RedirectUrlValidatorTest {
     }
 
     @Test
-    @DisplayName("relative paths are allowed; protocol-relative URLs are rejected")
+    @DisplayName("relative paths are allowed; cross-origin path forms are rejected")
     void relativePaths() {
         RedirectUrlValidator v = validator(new AuthConfig());
         assertThat(v.isAllowed("/dashboard")).isTrue();
         assertThat(v.isAllowed("/auth/callback?x=1")).isTrue();
         assertThat(v.isAllowed("//evil.com/phish")).isFalse();   // protocol-relative
+        assertThat(v.isAllowed("/\\evil.com/phish")).isFalse(); // browser-normalized to //evil.com
+        assertThat(v.isAllowed("/safe\\path")).isFalse();       // reject ambiguous separators
     }
 
     @Test
