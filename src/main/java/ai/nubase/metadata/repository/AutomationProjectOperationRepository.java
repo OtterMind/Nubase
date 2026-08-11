@@ -47,8 +47,8 @@ public interface AutomationProjectOperationRepository
             @Param("now") Instant now);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    Optional<AutomationProjectOperation> findByActorAndActionAndIdempotencyKey(
-            String actor, String action, String idempotencyKey);
+    Optional<AutomationProjectOperation> findByActorAndGrantIdAndActionAndIdempotencyKey(
+            String actor, UUID grantId, String action, String idempotencyKey);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<AutomationProjectOperation>

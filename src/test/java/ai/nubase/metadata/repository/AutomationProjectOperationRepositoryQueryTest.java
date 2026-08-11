@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.jpa.repository.Query;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AutomationProjectOperationRepositoryQueryTest {
 
@@ -30,5 +31,22 @@ class AutomationProjectOperationRepositoryQueryTest {
 
         assertThatCode(() -> CCJSqlParserUtil.parse(query.value()))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void idempotencyLookupRequiresGrantLineage() {
+        assertThatCode(() -> AutomationProjectOperationRepository.class.getMethod(
+                "findByActorAndGrantIdAndActionAndIdempotencyKey",
+                String.class,
+                java.util.UUID.class,
+                String.class,
+                String.class))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> AutomationProjectOperationRepository.class.getMethod(
+                "findByActorAndActionAndIdempotencyKey",
+                String.class,
+                String.class,
+                String.class))
+                .isInstanceOf(NoSuchMethodException.class);
     }
 }
