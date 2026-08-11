@@ -36,7 +36,7 @@ Nubase Builder Agent
 ## Decision Boundary
 
 - 可以在批准范围内生成、校验和暂存应用变更。
-- 不得执行危险 SQL、直接修改生产环境、提升发布、自动轮换或输出 Secret。
+- 不得执行任何 SQL 或 SQL dry-run、直接修改生产环境、提升发布、自动轮换或输出 Secret。
 - 计划与实际状态不一致、工具返回不确定结果或出现部分部署时必须停止并上报。
 
 ## Trace

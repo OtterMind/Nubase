@@ -15,19 +15,32 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.model.BucketVersioningStatus;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetBucketVersioningRequest;
+import software.amazon.awssdk.services.s3.model.GetBucketVersioningResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -54,6 +67,15 @@ public class AssetsService {
     /** Reserved R2 key segment separating CDN assets from Storage buckets (backend mode). */
     private static final String R2_PREFIX_SEGMENT = "__assets__";
 
+    private static final String BOUNDED_MARKER_ROOT = "__goai_e2e";
+    private static final String BOUNDED_MARKER_PREFIX = BOUNDED_MARKER_ROOT + "/";
+    private static final String BOUNDED_ARTIFACT_DIGEST = "bounded-artifact-digest";
+    private static final String BOUNDED_VERSION_ID = "bounded-version-id";
+    private static final Pattern BOUNDED_MARKER_PATH = Pattern.compile(
+            "^" + BOUNDED_MARKER_PREFIX + "run-[a-z0-9][a-z0-9-]{5,63}/marker\\.json$"
+    );
+    private static final Pattern SHA256_DIGEST = Pattern.compile("^sha256:[a-f0-9]{64}$");
+
     private static final String DEFAULT_CACHE_CONTROL = "public, max-age=3600";
 
     private static final int MAX_PATH_LENGTH = 1024;
@@ -77,11 +99,52 @@ public class AssetsService {
     @Value("${nubase.assets.public-base-url:}")
     private String publicBaseUrl;
 
+    /** Explicit operator proof that backend-mode storage is private and isolated. */
+    @Value("${nubase.assets.bounded-private-storage-enabled:false}")
+    private boolean boundedPrivateStorageEnabled;
+
     // ==================== Upload / delete ====================
 
     @Transactional
     public AssetFileDTO upload(String rawPath, byte[] bytes, String contentType, String cacheControl, boolean upsert) {
         String path = normalizePath(rawPath);
+        rejectReservedMarkerPath(path);
+        StoredAsset stored = store(path, bytes, contentType, cacheControl, upsert, false);
+        return toDTO(stored.file(), stored.settings());
+    }
+
+    @Transactional
+    public BoundedMarkerUploadResult uploadBoundedMarker(
+            String rawPath,
+            byte[] bytes,
+            String contentType,
+            String cacheControl
+    ) {
+        String path = normalizePath(rawPath);
+        requireBoundedMarkerPath(path);
+        requireBoundedPrivateStorage();
+        StoredAsset stored = store(path, bytes, contentType, cacheControl, false, true);
+        AssetFile file = stored.file();
+        String versionId = boundedVersionId(file);
+        if (!isUsableVersionId(versionId)) {
+            throw new IllegalStateException("Bounded marker version ID is unavailable");
+        }
+        return new BoundedMarkerUploadResult(
+                file.getPath(),
+                file.getSizeBytes(),
+                file.getEtag(),
+                versionId
+        );
+    }
+
+    private StoredAsset store(
+            String path,
+            byte[] bytes,
+            String contentType,
+            String cacheControl,
+            boolean upsert,
+            boolean lockExisting
+    ) {
         if (bytes == null || bytes.length == 0) {
             throw AssetsExceptions.badRequest("No content provided");
         }
@@ -92,7 +155,9 @@ public class AssetsService {
             throw AssetsExceptions.tooLarge(limit);
         }
 
-        AssetFile existing = assetFileRepository.findByPath(path).orElse(null);
+        AssetFile existing = lockExisting
+                ? assetFileRepository.findByPathForUpdate(path).orElse(null)
+                : assetFileRepository.findByPath(path).orElse(null);
         if (existing != null && !upsert) {
             throw AssetsExceptions.conflict(path);
         }
@@ -106,28 +171,56 @@ public class AssetsService {
         file.setContentType(effectiveContentType);
         file.setSizeBytes(bytes.length);
         file.setCacheControl(effectiveCacheControl);
-        file = assetFileRepository.save(file);
+        String boundedArtifactDigest = null;
+        if (lockExisting) {
+            boundedArtifactDigest = sha256(bytes);
+            file.setMetadata(Map.of(BOUNDED_ARTIFACT_DIGEST, boundedArtifactDigest));
+            try {
+                file = assetFileRepository.saveAndFlush(file);
+            } catch (DataIntegrityViolationException e) {
+                throw AssetsExceptions.conflict(path);
+            }
+        } else {
+            file = assetFileRepository.save(file);
+        }
 
         String s3Key = resolveKey(path);
+        String bucket = bucketName();
         String servedCacheControl = effectiveCacheControl != null
                 ? effectiveCacheControl : settings.getDefaultCacheControl();
-        PutObjectRequest putRequest = PutObjectRequest.builder()
-                .bucket(bucketName()).key(s3Key)
+        PutObjectRequest.Builder putRequestBuilder = PutObjectRequest.builder()
+                .bucket(bucket).key(s3Key)
                 .contentType(effectiveContentType).contentLength((long) bytes.length)
-                .cacheControl(servedCacheControl)
-                .build();
+                .cacheControl(servedCacheControl);
+        if (lockExisting) {
+            requireBoundedBucketVersioning(bucket);
+            putRequestBuilder
+                    .ifNoneMatch("*")
+                    .metadata(Map.of(BOUNDED_ARTIFACT_DIGEST, boundedArtifactDigest));
+        }
+        PutObjectRequest putRequest = putRequestBuilder.build();
         PutObjectResponse putResponse = r2.s3().putObject(putRequest, RequestBody.fromBytes(bytes));
         log.info("Asset uploaded to R2: s3Key={}, eTag={}", s3Key, putResponse.eTag());
 
         file.setEtag(putResponse.eTag());
+        if (lockExisting) {
+            if (!isUsableVersionId(putResponse.versionId())) {
+                throw new IllegalStateException("Bounded marker version ID is unavailable");
+            }
+            file.setMetadata(Map.of(
+                    BOUNDED_ARTIFACT_DIGEST, boundedArtifactDigest,
+                    BOUNDED_VERSION_ID, putResponse.versionId()
+            ));
+        }
         file = assetFileRepository.save(file);
 
-        return toDTO(file, settings);
+        return new StoredAsset(file, settings);
     }
 
     @Transactional
     public void delete(String rawPath) {
         String path = normalizePath(rawPath);
+        rejectReservedMarkerPath(path);
         AssetFile file = assetFileRepository.findByPath(path)
                 .orElseThrow(() -> AssetsExceptions.notFound(path));
 
@@ -138,14 +231,141 @@ public class AssetsService {
         log.info("Asset deleted: s3Key={}", s3Key);
     }
 
+    @Transactional
+    public boolean deleteBoundedMarkerVersion(
+            String rawPath,
+            String expectedVersionId,
+            String expectedEtag
+    ) {
+        String path = normalizePath(rawPath);
+        requireBoundedMarkerPath(path);
+        if (!isUsableVersionId(expectedVersionId) || StringUtils.isBlank(expectedEtag)) {
+            return false;
+        }
+
+        AssetFile file = assetFileRepository.findByPathForUpdate(path).orElse(null);
+        if (file == null || StringUtils.isBlank(file.getEtag())
+                || !Objects.equals(file.getEtag(), expectedEtag)
+                || !Objects.equals(boundedVersionId(file), expectedVersionId)) {
+            return false;
+        }
+
+        String s3Key = resolveKey(path);
+        String bucket = bucketName();
+        LatestObjectState beforeDelete = headLatest(bucket, s3Key);
+        if (beforeDelete.status() != LatestObjectStatus.FOUND
+                || !matchesBoundedVersion(
+                beforeDelete.response(),
+                boundedArtifactDigest(file),
+                expectedEtag,
+                expectedVersionId)) {
+            return false;
+        }
+        try {
+            r2.s3().deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(s3Key)
+                    .versionId(expectedVersionId)
+                    .build());
+        } catch (RuntimeException e) {
+            return false;
+        }
+        if (headLatest(bucket, s3Key).status() != LatestObjectStatus.NOT_FOUND) {
+            return false;
+        }
+        assetFileRepository.delete(file);
+        log.info("Bounded marker version deleted: s3Key={}, versionId={}", s3Key, expectedVersionId);
+        return true;
+    }
+
+    /**
+     * Reconcile an upload whose outcome is unknown. Compensation is allowed only when the
+     * exact reserved object carries the unpredictable digest of this marker attempt. The
+     * exact version delete prevents a later replacement from being removed after the HEAD.
+     */
+    @Transactional
+    public BoundedMarkerReconcileResult reconcileBoundedMarker(
+            String rawPath,
+            String expectedArtifactDigest
+    ) {
+        String path = normalizePath(rawPath);
+        requireBoundedMarkerPath(path);
+        if (expectedArtifactDigest == null
+                || !SHA256_DIGEST.matcher(expectedArtifactDigest).matches()) {
+            throw AssetsExceptions.badRequest("Invalid bounded marker artifact digest");
+        }
+
+        AssetFile file = assetFileRepository.findByPathForUpdate(path).orElse(null);
+        if (file != null && !expectedArtifactDigest.equals(boundedArtifactDigest(file))) {
+            return BoundedMarkerReconcileResult.ownershipMismatch();
+        }
+
+        String s3Key = resolveKey(path);
+        String bucket = bucketName();
+        LatestObjectState beforeDelete = headLatest(bucket, s3Key);
+        if (beforeDelete.status() != LatestObjectStatus.FOUND) {
+            return BoundedMarkerReconcileResult.unknown();
+        }
+        HeadObjectResponse head = beforeDelete.response();
+
+        if (!expectedArtifactDigest.equals(head.metadata().get(BOUNDED_ARTIFACT_DIGEST))) {
+            return BoundedMarkerReconcileResult.ownershipMismatch();
+        }
+        String observedEtag = head.eTag();
+        String observedVersionId = head.versionId();
+        if (StringUtils.isBlank(observedEtag) || !isUsableVersionId(observedVersionId)
+                || (file != null && StringUtils.isNotBlank(file.getEtag())
+                && !Objects.equals(file.getEtag(), observedEtag))
+                || (file != null && StringUtils.isNotBlank(boundedVersionId(file))
+                && !Objects.equals(boundedVersionId(file), observedVersionId))) {
+            return BoundedMarkerReconcileResult.compensationFailed(
+                    observedEtag, isUsableVersionId(observedVersionId) ? observedVersionId : null);
+        }
+
+        try {
+            r2.s3().deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(s3Key)
+                    .versionId(observedVersionId)
+                    .build());
+        } catch (RuntimeException e) {
+            return BoundedMarkerReconcileResult.compensationFailed(
+                    observedEtag, observedVersionId);
+        }
+        if (headLatest(bucket, s3Key).status() != LatestObjectStatus.NOT_FOUND) {
+            return BoundedMarkerReconcileResult.compensationFailed(
+                    observedEtag, observedVersionId);
+        }
+        if (file != null) {
+            assetFileRepository.delete(file);
+        }
+        log.info("Bounded marker version reconciled and deleted: s3Key={}, versionId={}",
+                s3Key, observedVersionId);
+        return BoundedMarkerReconcileResult.compensated(observedEtag, observedVersionId);
+    }
+
     // ==================== Read ====================
 
     public List<AssetFileDTO> list(String prefix, String search, Integer limit, Integer offset) {
+        boolean includeReservedMarkers = MultiTenancyContext.isServiceRole();
+        String normalizedPrefix = null;
+        if (StringUtils.isNotBlank(prefix)) {
+            normalizedPrefix = normalizePath(prefix);
+            if (!includeReservedMarkers && isReservedMarkerPath(normalizedPrefix)) {
+                return List.of();
+            }
+        }
         AssetSettings settings = getOrDefaultSettings();
-        List<AssetFile> files = StringUtils.isNotBlank(prefix)
-                ? assetFileRepository.findByPathPrefix(normalizePath(prefix))
+        List<AssetFile> files = normalizedPrefix != null
+                ? assetFileRepository.findByPathPrefix(normalizedPrefix)
                 : assetFileRepository.findAllByOrderByPathAsc();
+        files = new ArrayList<>(files);
 
+        if (!includeReservedMarkers) {
+            files = files.stream()
+                    .filter(file -> !isReservedMarkerPath(file.getPath()))
+                    .collect(Collectors.toList());
+        }
         String keyword = StringUtils.trimToNull(search);
         if (keyword != null) {
             files = files.stream()
@@ -170,24 +390,28 @@ public class AssetsService {
 
     public AssetFile getFileOrThrow(String rawPath) {
         String path = normalizePath(rawPath);
+        hideReservedMarkerPath(path);
         return assetFileRepository.findByPath(path)
                 .orElseThrow(() -> AssetsExceptions.notFound(path));
     }
 
     public AssetFile getPublicFileOrThrow(String rawPath) {
         String path = normalizePath(rawPath);
+        hideReservedMarkerPath(path);
         return assetFileRepository.findByPath(path)
                 .orElseGet(() -> getFallbackFileOrThrow(path));
     }
 
     /** Open the R2 object stream for an asset. Caller is responsible for consuming/closing it. */
     public InputStream openStream(AssetFile file) {
-        String s3Key = resolveKey(file.getPath());
+        String path = normalizePath(file.getPath());
+        hideReservedMarkerPath(path);
+        String s3Key = resolveKey(path);
         try {
             return r2.s3().getObject(GetObjectRequest.builder().bucket(bucketName()).key(s3Key).build());
         } catch (NoSuchKeyException e) {
             // Metadata row without a backing object (e.g. a previously interrupted upload).
-            throw AssetsExceptions.notFound(file.getPath());
+            throw AssetsExceptions.notFound(path);
         }
     }
 
@@ -226,7 +450,13 @@ public class AssetsService {
         }
         if (request.getSpaFallbackPath() != null) {
             String fallback = request.getSpaFallbackPath().trim();
-            settings.setSpaFallbackPath(fallback.isEmpty() ? null : normalizePath(fallback));
+            if (fallback.isEmpty()) {
+                settings.setSpaFallbackPath(null);
+            } else {
+                String normalizedFallback = normalizePath(fallback);
+                rejectReservedMarkerPath(normalizedFallback);
+                settings.setSpaFallbackPath(normalizedFallback);
+            }
         }
         if (request.getMaxFileSizeBytes() != null) {
             settings.setMaxFileSizeBytes(request.getMaxFileSizeBytes() > 0
@@ -251,7 +481,9 @@ public class AssetsService {
                 .cacheControl(file.getCacheControl())
                 .createdAt(file.getCreatedAt())
                 .updatedAt(file.getUpdatedAt())
-                .publicUrl(publicUrl(file.getPath(), settings))
+                .publicUrl(isReservedMarkerPath(file.getPath())
+                        ? null
+                        : publicUrl(file.getPath(), settings))
                 .build();
     }
 
@@ -301,7 +533,9 @@ public class AssetsService {
         if (StringUtils.isBlank(fallbackPath) || fallbackPath.equals(requestedPath)) {
             throw AssetsExceptions.notFound(requestedPath);
         }
-        return assetFileRepository.findByPath(fallbackPath)
+        String normalizedFallbackPath = normalizePath(fallbackPath);
+        hideReservedMarkerPath(normalizedFallbackPath);
+        return assetFileRepository.findByPath(normalizedFallbackPath)
                 .orElseThrow(() -> AssetsExceptions.notFound(requestedPath));
     }
 
@@ -330,6 +564,179 @@ public class AssetsService {
             return appCode + "/" + path;
         }
         return appCode + "/" + R2_PREFIX_SEGMENT + "/" + path;
+    }
+
+    private void rejectReservedMarkerPath(String path) {
+        if (isReservedMarkerPath(path)) {
+            throw AssetsExceptions.badRequest("The __goai_e2e namespace is reserved");
+        }
+    }
+
+    private void hideReservedMarkerPath(String path) {
+        if (isReservedMarkerPath(path)) {
+            throw AssetsExceptions.notFound(path);
+        }
+    }
+
+    private boolean isReservedMarkerPath(String path) {
+        return BOUNDED_MARKER_ROOT.equals(path)
+                || (path != null && path.startsWith(BOUNDED_MARKER_PREFIX));
+    }
+
+    private void requireBoundedMarkerPath(String path) {
+        if (!BOUNDED_MARKER_PATH.matcher(path).matches()) {
+            throw AssetsExceptions.badRequest("Invalid bounded marker path");
+        }
+    }
+
+    private void requireBoundedPrivateStorage() {
+        if (!boundedPrivateStorageEnabled
+                || StringUtils.isNotBlank(assetsBucket)
+                || StringUtils.isNotBlank(publicBaseUrl)
+                || StringUtils.isNotBlank(r2.publicUrl())) {
+            throw AssetsExceptions.boundedPrivateStorageRequired();
+        }
+    }
+
+    private String boundedArtifactDigest(AssetFile file) {
+        if (file.getMetadata() == null) {
+            return null;
+        }
+        Object value = file.getMetadata().get(BOUNDED_ARTIFACT_DIGEST);
+        return value instanceof String digest ? digest : null;
+    }
+
+    private String boundedVersionId(AssetFile file) {
+        if (file.getMetadata() == null) {
+            return null;
+        }
+        Object value = file.getMetadata().get(BOUNDED_VERSION_ID);
+        return value instanceof String versionId ? versionId : null;
+    }
+
+    private LatestObjectState headLatest(String bucket, String s3Key) {
+        try {
+            HeadObjectResponse response = r2.s3().headObject(HeadObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(s3Key)
+                    .build());
+            return new LatestObjectState(LatestObjectStatus.FOUND, response);
+        } catch (NoSuchKeyException e) {
+            return new LatestObjectState(LatestObjectStatus.NOT_FOUND, null);
+        } catch (S3Exception e) {
+            LatestObjectStatus status = e.statusCode() == 404
+                    ? LatestObjectStatus.NOT_FOUND
+                    : LatestObjectStatus.UNKNOWN;
+            return new LatestObjectState(status, null);
+        } catch (RuntimeException e) {
+            return new LatestObjectState(LatestObjectStatus.UNKNOWN, null);
+        }
+    }
+
+    private boolean matchesBoundedVersion(
+            HeadObjectResponse response,
+            String expectedArtifactDigest,
+            String expectedEtag,
+            String expectedVersionId
+    ) {
+        return response != null
+                && expectedArtifactDigest != null
+                && expectedArtifactDigest.equals(response.metadata().get(BOUNDED_ARTIFACT_DIGEST))
+                && Objects.equals(expectedEtag, response.eTag())
+                && Objects.equals(expectedVersionId, response.versionId());
+    }
+
+    private boolean isUsableVersionId(String versionId) {
+        return StringUtils.isNotBlank(versionId) && !"null".equalsIgnoreCase(versionId.trim());
+    }
+
+    private void requireBoundedBucketVersioning(String bucket) {
+        GetBucketVersioningResponse response;
+        try {
+            response = r2.s3().getBucketVersioning(GetBucketVersioningRequest.builder()
+                    .bucket(bucket)
+                    .build());
+        } catch (RuntimeException e) {
+            throw AssetsExceptions.versioningCheckFailed();
+        }
+        if (response == null || response.status() != BucketVersioningStatus.ENABLED) {
+            throw AssetsExceptions.versioningRequired();
+        }
+    }
+
+    private String sha256(byte[] value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value);
+            return "sha256:" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    public enum BoundedMarkerReconcileStatus {
+        COMPENSATED,
+        OWNERSHIP_MISMATCH,
+        COMPENSATION_FAILED,
+        UNKNOWN
+    }
+
+    public record BoundedMarkerReconcileResult(
+            BoundedMarkerReconcileStatus status,
+            String ownershipEtag,
+            String ownershipVersionId
+    ) {
+        private static BoundedMarkerReconcileResult compensated(
+                String ownershipEtag,
+                String ownershipVersionId
+        ) {
+            return new BoundedMarkerReconcileResult(
+                    BoundedMarkerReconcileStatus.COMPENSATED,
+                    ownershipEtag,
+                    ownershipVersionId);
+        }
+
+        private static BoundedMarkerReconcileResult ownershipMismatch() {
+            return new BoundedMarkerReconcileResult(
+                    BoundedMarkerReconcileStatus.OWNERSHIP_MISMATCH, null, null);
+        }
+
+        private static BoundedMarkerReconcileResult compensationFailed(
+                String ownershipEtag,
+                String ownershipVersionId
+        ) {
+            return new BoundedMarkerReconcileResult(
+                    BoundedMarkerReconcileStatus.COMPENSATION_FAILED,
+                    ownershipEtag,
+                    ownershipVersionId);
+        }
+
+        public static BoundedMarkerReconcileResult unknown() {
+            return new BoundedMarkerReconcileResult(
+                    BoundedMarkerReconcileStatus.UNKNOWN, null, null);
+        }
+    }
+
+    public record BoundedMarkerUploadResult(
+            String path,
+            long sizeBytes,
+            String etag,
+            String ownershipVersionId
+    ) {
+    }
+
+    private record StoredAsset(AssetFile file, AssetSettings settings) {
+    }
+
+    private enum LatestObjectStatus {
+        FOUND,
+        NOT_FOUND,
+        UNKNOWN
+    }
+
+    private record LatestObjectState(
+            LatestObjectStatus status,
+            HeadObjectResponse response
+    ) {
     }
 
     /**

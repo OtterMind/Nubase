@@ -57,6 +57,19 @@ class TenantBootstrapSqlIdempotencyTest {
                 .contains("DROP EVENT TRIGGER IF EXISTS pgrst_watch;");
     }
 
+    @Test
+    void assetReadPolicyHidesBoundedOwnershipMetadataFromRlsRoles() throws Exception {
+        assertThat(readResource("db/supabase/init_roles.sql"))
+                .contains("""
+                        DROP POLICY IF EXISTS "Asset files are readable" ON assets.files;
+                        CREATE POLICY "Asset files are readable"
+                            ON assets.files
+                            FOR SELECT
+                            USING (path <> '__goai_e2e' AND path !~ '^__goai_e2e/');
+                        """)
+                .contains("ALTER ROLE ${service_role} BYPASSRLS;");
+    }
+
     private static String readResource(String path) throws Exception {
         ClassPathResource resource = new ClassPathResource(path);
         try (BufferedReader reader = new BufferedReader(

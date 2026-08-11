@@ -15,8 +15,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -44,6 +42,8 @@ import java.util.*;
 @Slf4j
 public class SqlExecutionService {
     private static final int DRY_RUN_STATEMENT_TIMEOUT_MS = 5_000;
+    private static final String EXECUTION_ERROR = "SQL execution failed";
+    private static final String DRY_RUN_ERROR = "SQL dry-run failed";
 
     private final JdbcTemplate jdbcTemplate;
     private final SqlExecutionRecordRepository sqlExecutionRecordRepository;
@@ -70,7 +70,7 @@ public class SqlExecutionService {
         if (sql == null || sql.strip().isEmpty()) {
             log.warn("Empty SQL statement received");
             SqlExecutionResponse response = SqlExecutionResponse.error("SQL statement is empty", 0);
-            persistSqlExecutionRecord(appCode, databaseKey, schema, sql, response, null);
+            persistSqlExecutionRecord(appCode, databaseKey, schema, sql, response);
             return response;
         }
 
@@ -79,7 +79,7 @@ public class SqlExecutionService {
         try {
             setSearchPath(dbSchemas, schema, false, jdbcTemplate::execute);
 
-            log.info("Executing SQL in schema '{}': {}", schema, sql);
+            log.info("Executing SQL in schema '{}'", schema);
 
             // Execute SQL using Connection to get full control
             List<SqlExecutionResponse.SqlStatementResult> statementResults = new ArrayList<>();
@@ -103,15 +103,14 @@ public class SqlExecutionService {
                     schema, statementResults.size(), executionTime);
 
             SqlExecutionResponse response = SqlExecutionResponse.successWithResults(statementResults, executionTime);
-            persistSqlExecutionRecord(appCode, databaseKey, schema, sql, response, null);
+            persistSqlExecutionRecord(appCode, databaseKey, schema, sql, response);
             return response;
 
         } catch (Exception e) {
             long executionTime = System.currentTimeMillis() - startTime;
-            String errorMsg = String.format("SQL execution error in schema '%s': %s", schema, e.getMessage());
-            log.error("executeSql error: {}", errorMsg, e);
-            SqlExecutionResponse response = SqlExecutionResponse.error(errorMsg, executionTime);
-            persistSqlExecutionRecord(appCode, databaseKey, schema, sql, response, e);
+            log.error("SQL execution failed in schema '{}': errorType={}", schema, e.getClass().getSimpleName());
+            SqlExecutionResponse response = SqlExecutionResponse.error(EXECUTION_ERROR, executionTime);
+            persistSqlExecutionRecord(appCode, databaseKey, schema, sql, response);
             return response;
         }
     }
@@ -148,7 +147,7 @@ public class SqlExecutionService {
                 setSearchPath(dbSchemas, schema, true, sqlToRun -> executeStatement(statement, sqlToRun));
                 statement.execute("SET LOCAL statement_timeout = '" + DRY_RUN_STATEMENT_TIMEOUT_MS + "ms'");
 
-                log.info("Dry-running SQL in schema '{}': {}", schema, sql);
+                log.info("Dry-running SQL in schema '{}'", schema);
                 boolean isResultSet = statement.execute(sql);
                 collectStatementResults(statement, isResultSet, statementResults);
             }
@@ -161,16 +160,16 @@ public class SqlExecutionService {
         } catch (Exception e) {
             rollbackQuietly(connection);
             long executionTime = System.currentTimeMillis() - startTime;
-            String errorMsg = String.format("SQL dry-run error in schema '%s': %s", schema, e.getMessage());
-            log.warn("dryRunSql error: {}", errorMsg, e);
-            return SqlExecutionResponse.error(errorMsg, executionTime);
+            log.warn("SQL dry-run failed in schema '{}': errorType={}", schema, e.getClass().getSimpleName());
+            return SqlExecutionResponse.error(DRY_RUN_ERROR, executionTime);
         } finally {
             if (connection != null) {
                 if (originalAutoCommit != null) {
                     try {
                         connection.setAutoCommit(originalAutoCommit);
                     } catch (Exception e) {
-                        log.warn("Failed to restore autoCommit after SQL dry-run: {}", e.getMessage(), e);
+                        log.warn("Failed to restore autoCommit after SQL dry-run: errorType={}",
+                                e.getClass().getSimpleName());
                     }
                 }
                 DataSourceUtils.releaseConnection(connection, jdbcTemplate.getDataSource());
@@ -182,15 +181,10 @@ public class SqlExecutionService {
                                            String databaseKey,
                                            String schema,
                                            String sql,
-                                           SqlExecutionResponse response,
-                                           Exception exception) {
+                                           SqlExecutionResponse response) {
         try {
-            String executionResult = toJsonSafely(response);
+            String executionResult = toAuditSummary(response);
             String errorMessage = response != null ? response.getError() : null;
-            if (errorMessage == null && exception != null) {
-                errorMessage = exception.getMessage();
-            }
-            String errorStackTrace = exception == null ? null : toStackTrace(exception);
             boolean success = response != null && response.isSuccess();
             Long executionTimeMs = response != null ? response.getExecutionTimeMs() : null;
 
@@ -203,31 +197,30 @@ public class SqlExecutionService {
                     .executionTimeMs(executionTimeMs)
                     .executionResult(executionResult)
                     .errorMessage(errorMessage)
-                    .errorStackTrace(errorStackTrace)
+                    .errorStackTrace(null)
                     .build();
 
             sqlExecutionRecordRepository.save(record);
         } catch (Exception logException) {
-            log.error("Failed to persist SQL execution record: {}", logException.getMessage(), logException);
+            log.error("Failed to persist SQL execution record: errorType={}",
+                    logException.getClass().getSimpleName());
         }
     }
 
-    private String toJsonSafely(Object object) {
-        if (object == null) {
+    private String toAuditSummary(SqlExecutionResponse response) {
+        if (response == null) {
             return null;
         }
         try {
-            return JSONUtil.toJsonStr(object);
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("success", response.isSuccess());
+            summary.put("statementCount", response.getResults() == null ? 0 : response.getResults().size());
+            summary.put("rowsAffected", response.getRowsAffected());
+            summary.put("executionTimeMs", response.getExecutionTimeMs());
+            return JSONUtil.toJsonStr(summary);
         } catch (Exception e) {
-            return String.valueOf(object);
+            return null;
         }
-    }
-
-    private String toStackTrace(Exception exception) {
-        StringWriter stringWriter = new StringWriter();
-        PrintWriter printWriter = new PrintWriter(stringWriter);
-        exception.printStackTrace(printWriter);
-        return stringWriter.toString();
     }
 
     private void setSearchPath(List<String> dbSchemas,
@@ -316,7 +309,8 @@ public class SqlExecutionService {
         try {
             connection.rollback();
         } catch (Exception e) {
-            log.warn("Failed to rollback SQL dry-run transaction: {}", e.getMessage(), e);
+            log.warn("Failed to rollback SQL dry-run transaction: errorType={}",
+                    e.getClass().getSimpleName());
         }
     }
 

@@ -364,9 +364,9 @@ CREATE POLICY "Authenticated can read mem config"
 -- MEM-END
 
 -- ASSETS-BEGIN: read grants and policies on assets.* tables
--- Assets are public by definition (served apikey-free at /assets/v1/**), so
--- authenticated users may read metadata and settings; only service_role
--- (which bypasses RLS) can mutate.
+-- General assets are public by definition (served apikey-free at /assets/v1/**).
+-- Bounded marker ownership metadata stays visible only to service_role, which
+-- bypasses RLS; authenticated users may read all other metadata and settings.
 GRANT USAGE ON SCHEMA assets TO ${authenticated_role};
 GRANT SELECT ON ALL TABLES IN SCHEMA assets TO ${authenticated_role};
 ALTER DEFAULT PRIVILEGES IN SCHEMA assets
@@ -378,7 +378,7 @@ DROP POLICY IF EXISTS "Asset files are readable" ON assets.files;
 CREATE POLICY "Asset files are readable"
     ON assets.files
     FOR SELECT
-    USING (true);
+    USING (path <> '__goai_e2e' AND path !~ '^__goai_e2e/');
 
 DROP POLICY IF EXISTS "Asset settings are readable" ON assets.settings;
 CREATE POLICY "Asset settings are readable"

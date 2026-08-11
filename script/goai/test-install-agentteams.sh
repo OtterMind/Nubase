@@ -192,6 +192,16 @@ fi
 if (grep() { return 2; }; validate_host_share_scope >/dev/null 2>&1); then
     die "host-share content scan failure must fail closed"
 fi
+
+printf '%s\n' 'task-local-closure-20260811t025459z-9e90db' > "${SCAN_TEST_DIR}/task-id.txt"
+validate_host_share_scope >/dev/null 2>&1 \
+    || die "ordinary task identifiers must not match the secret scanner"
+printf '%s\n' 'sk-123456789012345678901234' > "${SCAN_TEST_DIR}/secret.txt"
+if (validate_host_share_scope >/dev/null 2>&1); then
+    die "standalone secret-shaped values must fail closed"
+fi
+rm -f -- "${SCAN_TEST_DIR}/task-id.txt" "${SCAN_TEST_DIR}/secret.txt"
+
 HOST_SHARE_SOURCE=""
 HOST_SHARE_ROOT=""
 

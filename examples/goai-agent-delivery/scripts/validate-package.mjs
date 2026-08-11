@@ -65,7 +65,33 @@ async function validatePackage() {
   await validatePackageTree();
   await validateAgentTeamsPackage();
   await validateIdentitiesAndSkills();
+  await validateOperationalRunbooks();
   await validateScenario();
+}
+
+async function validateOperationalRunbooks() {
+  const compatibilityReadmePath = path.join(packageRoot, 'compat', 'hiclaw-v1.1.2', 'README.md');
+  const compatibilityReadme = await readRequiredText(
+    compatibilityReadmePath,
+    'HiClaw compatibility runbook',
+  );
+  if (!compatibilityReadme) return;
+
+  const requiredCleanupMarkers = [
+    'cleanup_higress_refresh()',
+    'trap cleanup_higress_refresh EXIT HUP INT TERM',
+    'rm -f',
+    '/tmp/refresh-higress-mcp-policy.py',
+    '/tmp/goai-mcp-tool-policies.json',
+    '/tmp/higress-session-cookie-gateway',
+  ];
+  for (const marker of requiredCleanupMarkers) {
+    if (!compatibilityReadme.includes(marker)) {
+      addError(`${relative(compatibilityReadmePath)} must install a fail-closed Higress refresh cleanup trap`);
+      break;
+    }
+  }
+  summary.push('Operational hygiene: Higress refresh helper, policy, and session cookie are removed by trap');
 }
 
 async function validatePackageTree() {
@@ -340,10 +366,10 @@ async function validateMcpToolPolicies(runtimeRoot) {
         'listTables',
         'getTableStructure',
         'exportRlsPolicies',
-        'executeSqlDryRun',
         'deploymentsList',
         'deploymentStatus',
         'deploymentLogs',
+        'deploymentStageAsset',
         'storageListBuckets',
         'assetsList',
         'assetsUpload',
@@ -527,14 +553,14 @@ async function validateMcpToolPolicies(runtimeRoot) {
       if (javaPolicy.readiness !== 'PARTIAL') {
         addError(label + ' Java Builder readiness must remain PARTIAL');
       }
-      if (javaPartition.allow.includes('executeSql') || !javaPartition.deny.includes('executeSql')) {
-        addError(label + ' Java Builder must deny executeSql');
+      const javaSqlTools = ['executeSql', 'executeSqlDryRun'];
+      if (javaSqlTools.some((tool) => javaPartition.allow.includes(tool)
+        || !javaPartition.deny.includes(tool))) {
+        addError(label + ' Java Builder must deny executeSql and executeSqlDryRun');
       }
-      if (!javaPartition.allow.includes('executeSqlDryRun')) {
-        addError(label + ' Java Builder must allow only executeSqlDryRun for SQL inspection');
-      }
-      if (!/schema apply is therefore unavailable/i.test(javaPolicy.readinessReason ?? '')) {
-        addError(label + ' Java Builder readinessReason must disclose that database schema apply is unavailable');
+      if (!/no SQL execution or dry-run capability/i.test(javaPolicy.readinessReason ?? '')
+        || !/schema apply is unavailable/i.test(javaPolicy.readinessReason ?? '')) {
+        addError(label + ' Java Builder readinessReason must disclose that SQL execution, dry-run, and schema apply are unavailable');
       }
     }
   }

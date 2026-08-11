@@ -106,7 +106,8 @@ class RemoteAdminMcpToolsTest {
         AppDeploymentService deploymentService = mock(AppDeploymentService.class);
         AppDeploymentRollbackService rollbackService = mock(AppDeploymentRollbackService.class);
         Object result = new DeploymentsMcpTools(deploymentService, rollbackService,
-                mock(ai.nubase.deploy.service.AppWorkerService.class))
+                mock(ai.nubase.deploy.service.AppWorkerService.class),
+                mock(ai.nubase.deploy.service.BoundedAssetDeploymentService.class))
                 .deploymentRollback("4e581dbc-07f8-477c-8db1-41b89d65a36e");
 
         assertThat(result).isInstanceOf(Map.class);
@@ -120,7 +121,11 @@ class RemoteAdminMcpToolsTest {
         AppDeploymentRollbackService rollbackService = mock(AppDeploymentRollbackService.class);
         ai.nubase.deploy.service.AppWorkerService appWorkerService =
                 mock(ai.nubase.deploy.service.AppWorkerService.class);
-        Object result = new DeploymentsMcpTools(deploymentService, rollbackService, appWorkerService)
+        Object result = new DeploymentsMcpTools(
+                deploymentService,
+                rollbackService,
+                appWorkerService,
+                mock(ai.nubase.deploy.service.BoundedAssetDeploymentService.class))
                 .appWorkerDelete("my-app");
 
         assertThat(result).isInstanceOf(Map.class);

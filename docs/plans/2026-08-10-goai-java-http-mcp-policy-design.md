@@ -10,12 +10,12 @@
 
 ## 权限边界
 
-`nubase-read` 只提供 Memory、schema、deployment、worker、storage、assets、functions 和 cron 的只读工具。`nubase-build` 允许 sandbox 内的 Memory、Assets、Functions 和 Cron 构建能力，并暂时保留 `executeSqlDryRun`；由于 Java 端 `executeSql` 尚未强制拒绝危险 SQL，Builder 不获得 schema apply 权限，状态必须标记为 `PARTIAL`。`nubase-release` 只增加受控 `deploymentRollback`，不允许构建、SQL、Secret、Key 或用户管理工具。
+`nubase-read` 只提供 Memory、schema、deployment、worker、storage、assets、functions 和 cron 的只读工具。`nubase-build` 允许 sandbox 内的 Memory、Assets、Functions 和 Cron 构建能力，但同时拒绝 `executeSql` 与 `executeSqlDryRun`，Java route 不提供任何 SQL execution/dry-run，Builder 不获得 schema apply 权限，状态必须标记为 `PARTIAL`。`nubase-release` 只增加受控 `deploymentRollback`，不允许构建、SQL、Secret、Key 或用户管理工具。
 
-三条 Java policy 必须对源码注册的 43 个工具形成完整分区，且敏感与破坏性工具全部位于 deny 集合。Higress MCP 原始配置的顶层 `allowTools` 是 Java HTTP transport 的权威运行时边界；stdio 环境变量只约束 stdio bridge，不能替代网关白名单。HiClaw v1.1.2 还需要顶层 `tools: []` 兼容标记才能启用代理插件，但该空标记不参与工具授权。
+三条 Java policy 必须对源码注册的 44 个工具形成完整分区，且敏感与破坏性工具全部位于 deny 集合。Higress MCP 原始配置的顶层 `allowTools` 是 Java HTTP transport 的权威运行时边界；stdio 环境变量只约束 stdio bridge，不能替代网关白名单。HiClaw v1.1.2 还需要顶层 `tools: []` 兼容标记才能启用代理插件，但该空标记不参与工具授权。
 
 ## 验证与失败语义
 
 校验器从 `frontend/packages/mcp-bridge/src/tools.ts` 提取 stdio inventory，并从 `src/main/java/ai/nubase/mcp/tools/*McpTools.java` 的 `@Tool` 方法提取 Java inventory。每条路由分别验证唯一性、无交集、完整并集、敏感工具拒绝和关键角色能力，任何未知或未分类工具都 fail closed。
 
-本地配置完成后，必须分别验证三条路由的 `tools/list` 与 Java allow 集合完全一致，交叉 consumer 被拒绝，敏感工具不可发现。Builder 只能声明 `PARTIAL`，不得把 SQL dry-run 描述为绝对无副作用，也不得声称完整 staging schema 部署已经打通。
+本地配置完成后，必须分别验证三条路由的 `tools/list` 与 Java allow 集合完全一致，交叉 consumer 被拒绝，敏感工具不可发现。Builder 只能声明 `PARTIAL`，必须证明 `executeSql` 与 `executeSqlDryRun` 均不可发现或调用，也不得声称完整 staging schema 部署已经打通。

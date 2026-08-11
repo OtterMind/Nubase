@@ -77,6 +77,10 @@ Thumbs.db
 # TypeScript incremental build info
 *.tsbuildinfo
 
+# Python helper bytecode
+__pycache__/
+*.py[cod]
+
 # Frontend build artifacts (with-frontend Maven profile)
 frontend/.maven-frontend/
 frontend/apps/*/out/

@@ -30,6 +30,7 @@ public class AppDeployment {
     public static final String STATUS_SUCCEEDED = "succeeded";
     public static final String STATUS_FAILED = "failed";
     public static final String STATUS_ROLLED_BACK = "rolled_back";
+    public static final String STATUS_PARTIALLY_ROLLED_BACK = "partially_rolled_back";
     public static final String STATUS_ROLLBACK_FAILED = "rollback_failed";
 
     @Id

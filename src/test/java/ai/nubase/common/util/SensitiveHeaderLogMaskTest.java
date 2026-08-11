@@ -8,23 +8,34 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SensitiveHeaderLogMaskTest {
 
     @Test
-    void collectMasked_redactsApikeyAndAuthorization() {
+    void keepsOnlyAllowlistedHeaderNamesAndNeverRetainsValues() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader("apikey", "eyJhbGciOiJIUzI1NiJ9.service_role_payload");
-        request.addHeader("Authorization", "Bearer eyJhbGciOiJIUzI1NiJ9.user_jwt");
+        request.addHeader("apikey", "api-key-sensitive-sentinel");
+        request.addHeader("Authorization", "authorization-sensitive-sentinel");
+        request.addHeader("Cookie", "cookie-sensitive-sentinel");
+        request.addHeader("X-Custom-Token", "custom-token-sensitive-sentinel");
+        request.addHeader("X-Unreviewed", "unknown-header-sensitive-sentinel");
+        request.addHeader("X-Request-Id", "diagnostic-value-sensitive-sentinel");
+        request.addHeader("User-Agent", "user-agent-sensitive-sentinel");
         request.addHeader("Content-Type", "application/json");
 
         var masked = SensitiveHeaderLogMask.collectMasked(request);
 
-        assertThat(masked.get("apikey")).isEqualTo("eyJh...load");
-        assertThat(masked.get("Authorization")).isEqualTo("Bear..._jwt");
-        assertThat(masked.get("Content-Type")).isEqualTo("application/json");
+        assertThat(masked)
+                .containsEntry("X-Request-Id", "[present]")
+                .containsEntry("User-Agent", "[present]")
+                .doesNotContainKeys(
+                        "apikey",
+                        "Authorization",
+                        "Cookie",
+                        "X-Custom-Token",
+                        "X-Unreviewed",
+                        "Content-Type");
+        assertThat(masked.values()).containsOnly("[present]");
     }
 
     @Test
-    void maskValue_shortSensitiveHeaderReturnsPlaceholder() {
-        assertThat(SensitiveHeaderLogMask.maskValue("apikey", "short")).isEqualTo("***");
-        assertThat(SensitiveHeaderLogMask.maskValue("Content-Type", "application/json"))
-                .isEqualTo("application/json");
+    void returnsEmptyMapForMissingRequest() {
+        assertThat(SensitiveHeaderLogMask.collectMasked(null)).isEmpty();
     }
 }

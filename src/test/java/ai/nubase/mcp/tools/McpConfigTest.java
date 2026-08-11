@@ -21,7 +21,8 @@ class McpConfigTest {
         DeploymentsMcpTools deploymentsMcpTools = new DeploymentsMcpTools(
                 mock(ai.nubase.deploy.service.AppDeploymentService.class),
                 mock(ai.nubase.deploy.service.AppDeploymentRollbackService.class),
-                mock(ai.nubase.deploy.service.AppWorkerService.class)
+                mock(ai.nubase.deploy.service.AppWorkerService.class),
+                mock(ai.nubase.deploy.service.BoundedAssetDeploymentService.class)
         );
         FunctionsMcpTools functionsMcpTools = mock(FunctionsMcpTools.class);
         CronMcpTools cronMcpTools = mock(CronMcpTools.class);

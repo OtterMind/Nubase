@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -102,6 +103,13 @@ public class AppDeploymentService {
         int safeLimit = Math.max(1, Math.min(limit, 200));
         return deploymentRepository.findByProjectRefOrderByCreatedAtDesc(projectRef(), PageRequest.of(0, safeLimit))
                 .stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(transactionManager = "metadataTransactionManager", readOnly = true)
+    public Optional<DeploymentResponse> findBoundedByRunId(String runId) {
+        return deploymentRepository.findBoundedByProjectRefAndRunId(
+                        projectRef(), required(runId, "runId"))
+                .map(this::toResponse);
     }
 
     @Transactional(transactionManager = "metadataTransactionManager", readOnly = true)

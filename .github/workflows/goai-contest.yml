@@ -17,14 +17,24 @@ on:
       - 'pom.xml'
       - 'script/goai/**'
       - 'src/main/java/ai/nubase/agent/**'
+      - 'src/main/java/ai/nubase/assets/**'
       - 'src/main/java/ai/nubase/auth/controller/PostgrestController.java'
+      - 'src/main/java/ai/nubase/auth/service/SqlExecutionService.java'
       - 'src/main/java/ai/nubase/common/config/GlobalCorsConfig.java'
+      - 'src/main/java/ai/nubase/common/multitenancy/UnifiedMultiTenancyFilter.java'
+      - 'src/main/java/ai/nubase/common/util/SensitiveHeaderLogMask.java'
       - 'src/main/java/ai/nubase/deploy/**'
       - 'src/main/java/ai/nubase/mcp/**'
+      - 'src/main/java/ai/nubase/metadata/**'
+      - 'src/main/resources/db/migration/**'
       - 'src/main/resources/application.yml'
       - 'src/test/java/ai/nubase/agent/**'
+      - 'src/test/java/ai/nubase/assets/**'
       - 'src/test/java/ai/nubase/auth/controller/PostgrestControllerTest.java'
+      - 'src/test/java/ai/nubase/auth/service/SqlExecutionServiceTest.java'
       - 'src/test/java/ai/nubase/common/config/GlobalCorsConfigTest.java'
+      - 'src/test/java/ai/nubase/common/multitenancy/**'
+      - 'src/test/java/ai/nubase/common/util/**'
       - 'src/test/java/ai/nubase/deploy/**'
       - 'src/test/java/ai/nubase/mcp/**'
   pull_request:
@@ -41,14 +51,24 @@ on:
       - 'pom.xml'
       - 'script/goai/**'
       - 'src/main/java/ai/nubase/agent/**'
+      - 'src/main/java/ai/nubase/assets/**'
       - 'src/main/java/ai/nubase/auth/controller/PostgrestController.java'
+      - 'src/main/java/ai/nubase/auth/service/SqlExecutionService.java'
       - 'src/main/java/ai/nubase/common/config/GlobalCorsConfig.java'
+      - 'src/main/java/ai/nubase/common/multitenancy/UnifiedMultiTenancyFilter.java'
+      - 'src/main/java/ai/nubase/common/util/SensitiveHeaderLogMask.java'
       - 'src/main/java/ai/nubase/deploy/**'
       - 'src/main/java/ai/nubase/mcp/**'
+      - 'src/main/java/ai/nubase/metadata/**'
+      - 'src/main/resources/db/migration/**'
       - 'src/main/resources/application.yml'
       - 'src/test/java/ai/nubase/agent/**'
+      - 'src/test/java/ai/nubase/assets/**'
       - 'src/test/java/ai/nubase/auth/controller/PostgrestControllerTest.java'
+      - 'src/test/java/ai/nubase/auth/service/SqlExecutionServiceTest.java'
       - 'src/test/java/ai/nubase/common/config/GlobalCorsConfigTest.java'
+      - 'src/test/java/ai/nubase/common/multitenancy/**'
+      - 'src/test/java/ai/nubase/common/util/**'
       - 'src/test/java/ai/nubase/deploy/**'
       - 'src/test/java/ai/nubase/mcp/**'
   workflow_dispatch:
@@ -106,6 +126,11 @@ jobs:
       - name: Run validator negative cases
         run: node examples/goai-agent-delivery/scripts/test-validator.mjs
 
+      - name: Validate local closure and route refresh helpers
+        run: |
+          node examples/goai-agent-delivery/scripts/run-local-closure.mjs --self-test
+          python3 -m unittest script/goai/test_refresh_higress_mcp_policy.py
+
       - name: Run credential-free stdio MCP smoke
         run: node examples/goai-agent-delivery/scripts/mcp-smoke.mjs
 
@@ -123,7 +148,7 @@ jobs:
       - name: Run focused Java tests
         run: >-
           mvn -q
-          -Dtest=SqlRiskClassifierTest,DatabaseMcpToolsTest,McpConfigTest,RemoteAdminMcpToolsTest,AgentMetadataControllerTest,AppDeploymentAdminControllerTest,AppDeploymentServiceTest,AppDeploymentRollbackServiceTest,GlobalCorsConfigTest,PostgrestControllerTest
+          -Dtest=SqlRiskClassifierTest,DatabaseMcpToolsTest,SqlExecutionServiceTest,TenantBootstrapSqlIdempotencyTest,McpConfigTest,RemoteAdminMcpToolsTest,DeploymentsMcpToolsTest,AgentMetadataControllerTest,AppDeploymentAdminControllerTest,AppDeploymentServiceTest,BoundedAssetDeploymentServiceTest,AppDeploymentRollbackServiceTest,AssetsConfigurationTest,AssetsServiceTest,SensitiveHeaderLogMaskTest,McpRuntimeLoggingSafetyTest,UnifiedMultiTenancyFilterTest,GlobalCorsConfigTest,PostgrestControllerTest
           test
 
       - name: Install gitleaks

@@ -21,7 +21,6 @@ import ai.nubase.postgrest.schema.Column;
 import ai.nubase.postgrest.schema.ForeignKey;
 import ai.nubase.postgrest.schema.SchemaCache;
 import ai.nubase.postgrest.schema.Table;
-import com.alibaba.fastjson2.JSON;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -196,6 +195,11 @@ public class DatabaseMcpTools {
             }
             log.info("MCP_Tool_USED- executeSql called");
             SqlRisk risk = sqlRiskClassifier.classify(sqlQuery);
+            int statementCount = sqlRiskClassifier.countStatements(sqlQuery);
+            Map<String, Object> riskGuard = blockedSqlRisk(risk, statementCount);
+            if (riskGuard != null) {
+                return riskGuard;
+            }
             DatabaseConfig dbConfig = MultiTenancyContext.getDatabaseConfig();
             if (dbConfig == null || !DatabaseInitStatus.INITIALIZED.name().equals(dbConfig.getInitStatus())) {
                 return Map.of("error", "Database context not found, please ensure the database is initialized");
@@ -207,7 +211,8 @@ public class DatabaseMcpTools {
             SqlExecutionResponse response = sqlExecutionService.executeSql(request);
             // After executing SQL, reload schema cache to reflect any changes (especially for DDL statements)
             schemaCacheManager.reloadSchemaCache(dbConfig.getDbKey());
-            log.info("MCP_Tool_USED- executeSql completed"+ JSON.toJSONString(response));
+            log.info("MCP_Tool_USED- executeSql completed: success={}, risk={}, statementCount={}",
+                    response.isSuccess(), risk, statementCount);
             if (response.isSuccess()) {
                 // Return results for each statement
                 if (response.getResults() != null && !response.getResults().isEmpty()) {
@@ -215,7 +220,7 @@ public class DatabaseMcpTools {
                             "success", true,
                             "risk", risk.name(),
                             "results", response.getResults(),
-                            "statementCount", response.getResults().size(),
+                            "statementCount", statementCount,
                             "executionTimeMs", response.getExecutionTimeMs()
                     );
                 }
@@ -238,15 +243,18 @@ public class DatabaseMcpTools {
             } else {
                 return Map.of(
                         "success", false,
-                        "error", response.getError()
+                        "risk", risk.name(),
+                        "code", "SQL_EXECUTION_FAILED",
+                        "error", "SQL execution failed"
                 );
             }
 
         } catch (Exception e) {
-            log.error("Error executing SQL", e);
+            log.error("MCP executeSql failed: errorType={}", e.getClass().getSimpleName());
             return Map.of(
                     "success", false,
-                    "error", "Failed to execute SQL: " + e.getMessage()
+                    "code", "SQL_EXECUTION_FAILED",
+                    "error", "SQL execution failed"
             );
         }
     }
@@ -255,15 +263,9 @@ public class DatabaseMcpTools {
     public Object executeSqlDryRun(String sqlQuery) {
         SqlRisk risk = sqlRiskClassifier.classify(sqlQuery);
         int statementCount = sqlRiskClassifier.countStatements(sqlQuery);
-        if (risk == SqlRisk.DANGEROUS) {
-            return Map.of(
-                    "success", true,
-                    "risk", risk.name(),
-                    "statementCount", statementCount,
-                    "executable", false,
-                    "blocked", true,
-                    "error", "Dangerous SQL is blocked and was not transaction-validated"
-            );
+        Map<String, Object> riskGuard = blockedSqlRisk(risk, statementCount);
+        if (riskGuard != null) {
+            return riskGuard;
         }
 
         if (!MultiTenancyContext.isServiceRole()) {
@@ -296,7 +298,8 @@ public class DatabaseMcpTools {
                     "risk", risk.name(),
                     "statementCount", statementCount,
                     "executable", false,
-                    "error", response.getError() != null ? response.getError() : "SQL dry-run failed",
+                    "code", "SQL_DRY_RUN_FAILED",
+                    "error", "SQL dry-run failed",
                     "executionTimeMs", response.getExecutionTimeMs() != null ? response.getExecutionTimeMs() : 0
             );
         }
@@ -307,6 +310,21 @@ public class DatabaseMcpTools {
                 "executable", true,
                 "results", response.getResults() != null ? response.getResults() : List.of(),
                 "executionTimeMs", response.getExecutionTimeMs() != null ? response.getExecutionTimeMs() : 0
+        );
+    }
+
+    private Map<String, Object> blockedSqlRisk(SqlRisk risk, int statementCount) {
+        if (risk != SqlRisk.DANGEROUS && risk != SqlRisk.UNKNOWN) {
+            return null;
+        }
+        return Map.of(
+                "success", false,
+                "risk", risk.name(),
+                "statementCount", statementCount,
+                "executable", false,
+                "blocked", true,
+                "code", "SQL_RISK_BLOCKED",
+                "error", "SQL is blocked by the server risk policy"
         );
     }
 

@@ -18,6 +18,11 @@ spring:
     name: nubase
   profiles:
     default: dev
+  autoconfigure:
+    # Nubase uses its own JWT, API-key, and platform authentication flows.
+    # Disabling the unused default user prevents generated passwords from entering logs.
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
   # Metadata database connection. This is the only datasource the application strictly needs
   # at startup — it stores tenant configuration, platform users, and runtime settings.
@@ -257,6 +262,9 @@ nubase:
     # Public origin of that bucket's custom domain, e.g. https://assets.nubase.ai
     # (empty = build URLs against the project subdomain's /assets/v1 backend route).
     public-base-url: ${NUBASE_ASSETS_PUBLIC_BASE_URL:}
+    # Explicit proof for the private, versioned backend used by bounded GOAI markers.
+    # Keep false for shared/CDN storage; enable only for an isolated private bucket.
+    bounded-private-storage-enabled: ${NUBASE_ASSETS_BOUNDED_PRIVATE_STORAGE_ENABLED:false}
     # Max size of a single asset in bytes (projects can lower this via assets.settings).
     max-file-size: ${NUBASE_ASSETS_MAX_FILE_SIZE:26214400}  # 25MB
 

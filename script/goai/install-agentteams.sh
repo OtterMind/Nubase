@@ -22,7 +22,7 @@ RUNTIME_OVERRIDE=""
 
 WORKER_NAMES=(delivery-lead builder-agent verifier-agent release-governor)
 SKILL_NAMES=(app-plan app-build release-verify release-govern)
-SECRET_PATTERN='-----BEGIN ([A-Z]+ )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|Bearer[[:space:]]+[A-Za-z0-9._~-]{20,}|https?://[^/@[:space:]]+:[^/@[:space:]]+@'
+SECRET_PATTERN='-----BEGIN ([A-Z]+ )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|(^|[^[:alnum:]_])sk-[A-Za-z0-9_-]{20,}|Bearer[[:space:]]+[A-Za-z0-9._~-]{20,}|https?://[^/@[:space:]]+:[^/@[:space:]]+@'
 
 log() {
     printf '[goai-agentteams] %s\n' "$*"
@@ -299,7 +299,7 @@ validate_mcp_policy() {
           "java_readiness" => "PARTIAL",
           "java_allow" => %w[
             memorySearch memoryContext memoryWrite listTables getTableStructure exportRlsPolicies
-            executeSqlDryRun deploymentsList deploymentStatus deploymentLogs storageListBuckets
+            deploymentsList deploymentStatus deploymentLogs deploymentStageAsset storageListBuckets
             assetsList assetsUpload functionsList functionsCreate functionsUpdate
             functionsDeployBundle functionsLogs cronList cronGet cronCreate cronUpdate cronRuns
           ]
@@ -445,14 +445,13 @@ validate_mcp_policy() {
         next unless route_name == "nubase-build"
 
         abort "Java Builder readiness must remain PARTIAL" unless java_policy["readiness"] == "PARTIAL"
-        abort "Java Builder must deny executeSql" unless (
-          java_policy["denyTools"].include?("executeSql") && !java_policy["allowTools"].include?("executeSql")
-        )
-        abort "Java Builder must allow executeSqlDryRun" unless java_policy["allowTools"].include?(
-          "executeSqlDryRun"
-        )
-        abort "Java Builder must disclose unavailable schema apply" unless java_policy["readinessReason"].match?(
-          /schema apply is therefore unavailable/i
+        java_sql_tools = %w[executeSql executeSqlDryRun]
+        abort "Java Builder must deny executeSql and executeSqlDryRun" unless java_sql_tools.all? { |tool|
+          java_policy["denyTools"].include?(tool) && !java_policy["allowTools"].include?(tool)
+        }
+        abort "Java Builder must disclose unavailable SQL and schema apply" unless (
+          java_policy["readinessReason"].match?(/no SQL execution or dry-run capability/i) &&
+          java_policy["readinessReason"].match?(/schema apply is unavailable/i)
         )
       end
 

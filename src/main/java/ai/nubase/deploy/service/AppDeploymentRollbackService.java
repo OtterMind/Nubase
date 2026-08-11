@@ -37,6 +37,8 @@ public class AppDeploymentRollbackService {
     private static final String STEP_MEMORY_WRITE = "memory_write";
     private static final String STEP_FUNCTIONS_SECRETS_SET = "functions_secrets_set";
     private static final String STEP_FUNCTIONS_INVOKE = "functions_invoke";
+    private static final String BOUNDED_ASSET_PROFILE = "bounded-asset-v1";
+    private static final String JAVA_HTTP_MCP = "java-http-mcp";
 
     private final AppDeploymentRepository deploymentRepository;
     private final AppDeploymentStepRepository stepRepository;
@@ -44,9 +46,23 @@ public class AppDeploymentRollbackService {
     private final ObjectProvider<ScheduledJobAdminService> scheduledJobAdminService;
     private final ObjectMapper objectMapper;
 
+    @Transactional("metadataTransactionManager")
     public RollbackDeploymentResponse rollback(UUID deploymentId) {
         AppDeployment deployment = findDeployment(deploymentId);
+        if (AppDeployment.STATUS_ROLLED_BACK.equals(deployment.getStatus())) {
+            return new RollbackDeploymentResponse(
+                    deployment.getId(), AppDeployment.STATUS_ROLLED_BACK, true, List.of());
+        }
+        if (AppDeployment.STATUS_PARTIALLY_ROLLED_BACK.equals(deployment.getStatus())) {
+            return new RollbackDeploymentResponse(
+                    deployment.getId(), AppDeployment.STATUS_PARTIALLY_ROLLED_BACK, false, List.of());
+        }
         List<AppDeploymentStep> steps = new ArrayList<>(stepRepository.findByDeploymentIdOrderByStepOrderAsc(deployment.getId()));
+        if (steps.isEmpty()) {
+            updateDeploymentStatus(deployment, AppDeployment.STATUS_PARTIALLY_ROLLED_BACK);
+            return new RollbackDeploymentResponse(
+                    deployment.getId(), AppDeployment.STATUS_PARTIALLY_ROLLED_BACK, false, List.of());
+        }
         Collections.reverse(steps);
 
         List<RollbackActionResponse> actions = new ArrayList<>();
@@ -57,18 +73,26 @@ public class AppDeploymentRollbackService {
             if (step.getStepName() != null && step.getStepName().startsWith("rollback:")) {
                 continue;
             }
-            RollbackActionResponse action = rollbackStep(step);
+            RollbackActionResponse action = rollbackStep(deployment, step);
             actions.add(action);
             appendRollbackStep(deployment, nextOrder++, action);
         }
 
-        boolean success = actions.stream().noneMatch(action -> AppDeploymentStep.STATUS_FAILED.equals(action.status()));
-        String status = success ? AppDeployment.STATUS_ROLLED_BACK : AppDeployment.STATUS_ROLLBACK_FAILED;
-        updateDeploymentStatus(deployment.getId(), status);
+        boolean hasFailed = actions.stream()
+                .anyMatch(action -> AppDeploymentStep.STATUS_FAILED.equals(action.status()));
+        boolean hasSkipped = actions.stream()
+                .anyMatch(action -> AppDeploymentStep.STATUS_SKIPPED.equals(action.status()));
+        String status = hasFailed
+                ? AppDeployment.STATUS_ROLLBACK_FAILED
+                : hasSkipped
+                        ? AppDeployment.STATUS_PARTIALLY_ROLLED_BACK
+                        : AppDeployment.STATUS_ROLLED_BACK;
+        boolean success = AppDeployment.STATUS_ROLLED_BACK.equals(status);
+        updateDeploymentStatus(deployment, status);
         return new RollbackDeploymentResponse(deployment.getId(), status, success, actions);
     }
 
-    private RollbackActionResponse rollbackStep(AppDeploymentStep step) {
+    private RollbackActionResponse rollbackStep(AppDeployment deployment, AppDeploymentStep step) {
         if (!AppDeploymentStep.STATUS_SUCCEEDED.equals(step.getStatus())) {
             return skipped(step, "Only succeeded deployment steps are rollback candidates.");
         }
@@ -82,8 +106,26 @@ public class AppDeploymentRollbackService {
         try {
             return switch (step.getStepName()) {
                 case STEP_ASSETS_UPLOAD -> {
-                    assetsService.delete(target);
-                    yield succeeded(step, Map.of("operation", "asset_deleted", "path", target));
+                    if (!isBoundedJavaMcpDeployment(deployment)
+                            || !isBoundedAssetPath(deployment, target)) {
+                        yield skipped(step, "Automatic asset rollback requires bounded ownership proof.");
+                    }
+                    String expectedEtag = resultValue(step, "etag");
+                    if (!StringUtils.hasText(expectedEtag)) {
+                        yield skipped(step, "Asset ownership ETag was not recorded.");
+                    }
+                    String expectedVersionId = resultValue(step, "ownershipVersionId");
+                    if (!StringUtils.hasText(expectedVersionId)) {
+                        yield skipped(step, "Asset ownership version ID was not recorded.");
+                    }
+                    if (!assetsService.deleteBoundedMarkerVersion(
+                            target, expectedVersionId, expectedEtag)) {
+                        yield skipped(step, "Asset identity changed or is no longer provable.");
+                    }
+                    yield succeeded(step, Map.of(
+                            "operation", "asset_version_deleted",
+                            "ownershipVersionId", expectedVersionId,
+                            "path", target));
                 }
                 case STEP_CRON_CREATE -> {
                     ScheduledJobAdminService adminService = scheduledJobAdminService.getIfAvailable();
@@ -101,8 +143,8 @@ public class AppDeploymentRollbackService {
                 case STEP_FUNCTIONS_INVOKE -> skipped(step, "Function verification did not create deployable state.");
                 default -> skipped(step, "Unsupported deployment step type: " + step.getStepName());
             };
-        } catch (Exception e) {
-            return failed(step, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+        } catch (Exception ignored) {
+            return failed(step, "ROLLBACK_ACTION_FAILED");
         }
     }
 
@@ -121,11 +163,9 @@ public class AppDeploymentRollbackService {
                 AppDeploymentStep.STATUS_FAILED, null, errorMessage);
     }
 
-    @Transactional("metadataTransactionManager")
-    protected void appendRollbackStep(AppDeployment deployment, int stepOrder, RollbackActionResponse action) {
-        AppDeployment managedDeployment = deploymentRepository.getReferenceById(deployment.getId());
+    private void appendRollbackStep(AppDeployment deployment, int stepOrder, RollbackActionResponse action) {
         AppDeploymentStep rollbackStep = AppDeploymentStep.builder()
-                .deployment(managedDeployment)
+                .deployment(deployment)
                 .stepOrder(stepOrder)
                 .stepName(action.stepName())
                 .targetName(action.targetName())
@@ -138,20 +178,20 @@ public class AppDeploymentRollbackService {
         stepRepository.save(rollbackStep);
     }
 
-    @Transactional("metadataTransactionManager")
-    protected void updateDeploymentStatus(UUID deploymentId, String status) {
-        AppDeployment deployment = deploymentRepository.findById(deploymentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Deployment not found"));
+    private void updateDeploymentStatus(AppDeployment deployment, String status) {
         deployment.setStatus(status);
-        deployment.setErrorMessage(AppDeployment.STATUS_ROLLBACK_FAILED.equals(status)
-                ? "One or more rollback actions failed"
-                : null);
+        deployment.setErrorMessage(switch (status) {
+            case AppDeployment.STATUS_ROLLBACK_FAILED -> "One or more rollback actions failed";
+            case AppDeployment.STATUS_PARTIALLY_ROLLED_BACK ->
+                    "One or more deployment steps require manual compensation";
+            default -> null;
+        });
         deployment.setCompletedAt(Instant.now());
         deploymentRepository.save(deployment);
     }
 
     private AppDeployment findDeployment(UUID id) {
-        return deploymentRepository.findByProjectRefAndId(projectRef(), id)
+        return deploymentRepository.findByProjectRefAndIdForUpdate(projectRef(), id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Deployment not found"));
     }
 
@@ -161,6 +201,33 @@ public class AppDeploymentRollbackService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Project context is required");
         }
         return projectRef;
+    }
+
+    private boolean isBoundedJavaMcpDeployment(AppDeployment deployment) {
+        if (!StringUtils.hasText(deployment.getManifestSummary())) return false;
+        try {
+            Map<String, Object> summary = objectMapper.readValue(deployment.getManifestSummary(), Map.class);
+            return BOUNDED_ASSET_PROFILE.equals(summary.get("profile"))
+                    && JAVA_HTTP_MCP.equals(summary.get("transport"));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean isBoundedAssetPath(AppDeployment deployment, String target) {
+        if (!StringUtils.hasText(deployment.getRunId())) return false;
+        return ("__goai_e2e/" + deployment.getRunId() + "/marker.json").equals(target);
+    }
+
+    private String resultValue(AppDeploymentStep step, String key) {
+        if (!StringUtils.hasText(step.getResult())) return null;
+        try {
+            Map<String, Object> result = objectMapper.readValue(step.getResult(), Map.class);
+            Object value = result.get(key);
+            return value instanceof String stringValue ? stringValue : null;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     @SuppressWarnings("unchecked")

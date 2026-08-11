@@ -144,7 +144,7 @@ const cases = [
   },
   {
     name: 'Java Builder executeSql grant',
-    expected: /Java Builder must deny executeSql/,
+    expected: /Java Builder must deny executeSql and executeSqlDryRun/,
     mutate: () => mutatePolicy((policy) => {
       const route = policy.routes.find((item) => item.name === 'nubase-build');
       route.javaHttpPolicy.denyTools = route.javaHttpPolicy.denyTools.filter(
@@ -154,12 +154,46 @@ const cases = [
     }),
   },
   {
+    name: 'Java Builder executeSqlDryRun regrant',
+    expected: /Java Builder must deny executeSql and executeSqlDryRun/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'nubase-build');
+      route.javaHttpPolicy.denyTools = route.javaHttpPolicy.denyTools.filter(
+        (tool) => tool !== 'executeSqlDryRun',
+      );
+      route.javaHttpPolicy.allowTools.push('executeSqlDryRun');
+    }),
+  },
+  {
+    name: 'Java read deployment staging escalation',
+    expected: /javaHttpPolicy allowTools must match the reviewed Java role partition/,
+    mutate: () => mutatePolicy((policy) => {
+      const route = policy.routes.find((item) => item.name === 'nubase-read');
+      route.javaHttpPolicy.denyTools = route.javaHttpPolicy.denyTools.filter(
+        (tool) => tool !== 'deploymentStageAsset',
+      );
+      route.javaHttpPolicy.allowTools.push('deploymentStageAsset');
+    }),
+  },
+  {
     name: 'Higress consumer without runtime prefix',
     expected: /higressConsumers do not match the reviewed Console API consumer identities/,
     mutate: () => mutatePolicy((policy) => {
       const route = policy.routes.find((item) => item.name === 'nubase-build');
       route.higressConsumers = ['nubase-builder'];
     }),
+  },
+  {
+    name: 'Higress refresh cleanup removed',
+    expected: /must install a fail-closed Higress refresh cleanup trap/,
+    mutate: async () => {
+      const readmePath = packagePath('compat', 'hiclaw-v1.1.2', 'README.md');
+      const readme = await readFile(readmePath, 'utf8');
+      await writeFile(
+        readmePath,
+        readme.replace('trap cleanup_higress_refresh EXIT HUP INT TERM', 'true'),
+      );
+    },
   },
 ];
 

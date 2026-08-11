@@ -72,6 +72,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
     private static final Logger MCP_LOG = LoggerFactory.getLogger("McpLogger");
+    private static final String MCP_SAFE_REQUEST_PATH = "/mcp";
     private static final String PROJECT_REF_HEADER = "x-nubase-project-ref";
     private final DatabaseConfigRepository databaseConfigRepository;
     private final RoutingDataSource routingDataSource;
@@ -110,8 +111,11 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String requestPath = request.getRequestURI();
+        boolean mcpRequest = isMcpRequest(requestPath);
+        String requestPathForLogging = mcpRequest ? MCP_SAFE_REQUEST_PATH : requestPath;
         if (!requestPath.contains("/auth/v1/health")) {
-            log.info("Processing request (unified multitenancy): {} {}", request.getMethod(), requestPath);
+            log.info("Processing request (unified multitenancy): {} {}",
+                    request.getMethod(), requestPathForLogging);
         }
 
         // Root path redirects to the bundled Studio UI; no apikey, exact match only
@@ -144,18 +148,21 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
             // 2. Handle user authentication (Bearer token)
             authenticateUser(request);
             // 3. Pass the request through
-            log.debug("Unified multitenancy context setup successful for: {}", requestPath);
+            log.debug("Unified multitenancy context setup successful for: {}", requestPathForLogging);
             filterChain.doFilter(cachingRequest, cachingResponse);
         } catch (Exception e) {
-            log.error("Unified multitenancy context setup failed for {}: {}",
-                    requestPath, e.getMessage(), e);
-            if (requestPath.startsWith("/mcp")) {
-                MCP_LOG.error("MCP Request processing failed: method={}, uri={}, error={}",
-                        request.getMethod(), requestPath, e.getMessage(), e);
+            if (mcpRequest) {
+                log.error("Unified multitenancy context setup failed for {}: errorType={}",
+                        MCP_SAFE_REQUEST_PATH, e.getClass().getSimpleName());
+                MCP_LOG.error("MCP Request processing failed: method={}, uri={}, errorType={}",
+                        request.getMethod(), MCP_SAFE_REQUEST_PATH, e.getClass().getSimpleName());
+            } else {
+                log.error("Unified multitenancy context setup failed for {}: {}",
+                        requestPath, e.getMessage(), e);
             }
-            handleException(response, e.getMessage());
+            handleException(response, mcpRequest ? "Unauthorized" : e.getMessage());
         } finally {
-            if (requestPath.startsWith("/mcp")) {
+            if (mcpRequest) {
                 // MCP requests use a dedicated logger
                 logRequest(cachingRequest);
                 logResponse(cachingResponse, 100);
@@ -467,7 +474,7 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception e) {
-            log.warn("User authentication failed: {}", e.getMessage());
+            log.warn("User authentication failed: errorType={}", e.getClass().getSimpleName());
             // User authentication failure usually does not block the request (it may target a public endpoint)
         }
     }
@@ -510,18 +517,19 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
     }
 
     private void logRequest(ContentCachingRequestWrapper request) {
-        byte[] content = request.getContentAsByteArray();
-        String body = content.length > 0 ? new String(content, StandardCharsets.UTF_8) : null;
-
-        MCP_LOG.info("MCP Request: method={}, uri={}, headers={}, body={}",
-                request.getMethod(), request.getRequestURI(), SensitiveHeaderLogMask.collectMasked(request), body);
-
+        MCP_LOG.info("MCP Request: method={}, uri={}, headers={}, bodyBytes={}",
+                request.getMethod(), MCP_SAFE_REQUEST_PATH,
+                SensitiveHeaderLogMask.collectMasked(request), request.getContentAsByteArray().length);
     }
 
     private void logResponse(ContentCachingResponseWrapper response, long duration) {
-        byte[] content = response.getContentAsByteArray();
-        String body = content.length > 0 ? new String(content, StandardCharsets.UTF_8) : null;
+        MCP_LOG.info("MCP Response: status={}, bodyBytes={}, duration={}ms",
+                response.getStatus(), response.getContentAsByteArray().length, duration);
+    }
 
-        MCP_LOG.info("MCP Response: status={}, body={}, duration={}ms", response.getStatus(), body, duration);
+    private boolean isMcpRequest(String requestPath) {
+        return "/mcp".equals(requestPath)
+                || requestPath.startsWith("/mcp/")
+                || requestPath.startsWith("/mcp;");
     }
 }

@@ -7,6 +7,7 @@ import ai.nubase.common.context.MultiTenancyContext;
 import ai.nubase.common.enums.DatabaseInitStatus;
 import ai.nubase.mcp.safety.SqlRiskClassifier;
 import ai.nubase.postgrest.multidb.DatabaseConfig;
+import ai.nubase.postgrest.multidb.SchemaCacheManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,11 +26,13 @@ class DatabaseMcpToolsTest {
 
     private DatabaseMcpTools tools;
     private SqlExecutionService sqlExecutionService;
+    private SchemaCacheManager schemaCacheManager;
 
     @BeforeEach
     void setUp() {
         sqlExecutionService = mock(SqlExecutionService.class);
-        tools = new DatabaseMcpTools(null, sqlExecutionService, null, null, new SqlRiskClassifier());
+        schemaCacheManager = mock(SchemaCacheManager.class);
+        tools = new DatabaseMcpTools(schemaCacheManager, sqlExecutionService, null, null, new SqlRiskClassifier());
     }
 
     @AfterEach
@@ -89,10 +92,86 @@ class DatabaseMcpToolsTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> response = (Map<String, Object>) tools.executeSqlDryRun("drop table todos");
 
-        assertThat(response).containsEntry("success", true);
+        assertThat(response).containsEntry("success", false);
         assertThat(response).containsEntry("risk", "DANGEROUS");
         assertThat(response).containsEntry("executable", false);
         assertThat(response).containsEntry("blocked", true);
+        assertThat(response).containsEntry("code", "SQL_RISK_BLOCKED");
+        verifyNoInteractions(sqlExecutionService);
+    }
+
+    @Test
+    void executeSqlBlocksDangerousAndUnknownSqlBeforeExecution() {
+        setInitializedServiceRoleContext();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> dangerous = (Map<String, Object>) tools.executeSql("copy todos to program 'external-command'");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unboundedDelete = (Map<String, Object>) tools.executeSql("delete from only (todos) * as t");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> privilegedAlter = (Map<String, Object>) tools.executeSql("alter role app_user bypassrls");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unknown = (Map<String, Object>) tools.executeSql("listen app_events");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> carriageReturnBypass = (Map<String, Object>) tools.executeSql(
+                "select 1 -- harmless\r; drop table victims");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> ambiguousBackslashBatch = (Map<String, Object>) tools.executeSql(
+                "SELECT 'a\\'; SELECT '; DROP TABLE victims; --'");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> benignPlainBackslash = (Map<String, Object>) tools.executeSql(
+                "select 'plain\\path'");
+
+        assertThat(dangerous).containsEntry("success", false).containsEntry("risk", "DANGEROUS");
+        assertThat(unboundedDelete).containsEntry("success", false).containsEntry("risk", "DANGEROUS");
+        assertThat(privilegedAlter).containsEntry("success", false).containsEntry("risk", "DANGEROUS");
+        assertThat(unknown).containsEntry("success", false).containsEntry("risk", "UNKNOWN");
+        assertThat(carriageReturnBypass).containsEntry("success", false).containsEntry("risk", "DANGEROUS");
+        assertThat(ambiguousBackslashBatch).containsEntry("success", false).containsEntry("risk", "UNKNOWN");
+        assertThat(benignPlainBackslash).containsEntry("success", false).containsEntry("risk", "UNKNOWN");
+        verifyNoInteractions(sqlExecutionService);
+    }
+
+    @Test
+    void executeSqlAndDryRunBlockExecutableDdlBeforeExecution() {
+        setInitializedServiceRoleContext();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> function = (Map<String, Object>) tools.executeSql(
+                "create function emit_event() returns void language plpgsql "
+                        + "as $$ begin perform pg_notify('events', 'created;drop table todos'); end $$");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> destructiveAlter = (Map<String, Object>) tools.executeSql(
+                "alter table todos rename to archived_todos");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> defaultExpression = (Map<String, Object>) tools.executeSqlDryRun(
+                "alter table todos add column event_id bigint default emit_event()");
+
+        assertThat(function)
+                .containsEntry("success", false)
+                .containsEntry("risk", "DANGEROUS")
+                .containsEntry("code", "SQL_RISK_BLOCKED");
+        assertThat(destructiveAlter)
+                .containsEntry("success", false)
+                .containsEntry("risk", "DANGEROUS")
+                .containsEntry("code", "SQL_RISK_BLOCKED");
+        assertThat(defaultExpression)
+                .containsEntry("success", false)
+                .containsEntry("risk", "DANGEROUS")
+                .containsEntry("code", "SQL_RISK_BLOCKED");
+        verifyNoInteractions(sqlExecutionService, schemaCacheManager);
+    }
+
+    @Test
+    void executeSqlDryRunBlocksUnknownSqlBeforeTransactionalValidation() {
+        setInitializedServiceRoleContext();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> response = (Map<String, Object>) tools.executeSqlDryRun("listen app_events");
+
+        assertThat(response).containsEntry("success", false);
+        assertThat(response).containsEntry("risk", "UNKNOWN");
+        assertThat(response).containsEntry("code", "SQL_RISK_BLOCKED");
         verifyNoInteractions(sqlExecutionService);
     }
 
@@ -117,15 +196,32 @@ class DatabaseMcpToolsTest {
     void executeSqlDryRunReturnsErrorWhenTransactionalValidationFails() {
         setInitializedServiceRoleContext();
         when(sqlExecutionService.dryRunSql(any(ExecuteSqlRequest.class)))
-                .thenReturn(SqlExecutionResponse.error("syntax error at or near \"table\"", 3));
+                .thenReturn(SqlExecutionResponse.error("sensitive driver detail", 3));
 
         @SuppressWarnings("unchecked")
         Map<String, Object> response = (Map<String, Object>) tools.executeSqlDryRun("create table");
 
         assertThat(response).containsEntry("success", false);
         assertThat(response).containsEntry("executable", false);
-        assertThat(response.get("error")).asString().contains("syntax error");
+        assertThat(response).containsEntry("code", "SQL_DRY_RUN_FAILED");
+        assertThat(response).containsEntry("error", "SQL dry-run failed");
+        assertThat(response.get("error")).asString().doesNotContain("sensitive driver detail");
         assertThat(response).containsEntry("executionTimeMs", 3L);
+    }
+
+    @Test
+    void executeSqlDoesNotExposeServiceError() {
+        setInitializedServiceRoleContext();
+        when(sqlExecutionService.executeSql(any(ExecuteSqlRequest.class)))
+                .thenReturn(SqlExecutionResponse.error("sensitive driver detail", 4));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> response = (Map<String, Object>) tools.executeSql("select 1");
+
+        assertThat(response).containsEntry("success", false);
+        assertThat(response).containsEntry("code", "SQL_EXECUTION_FAILED");
+        assertThat(response).containsEntry("error", "SQL execution failed");
+        assertThat(response.get("error")).asString().doesNotContain("sensitive driver detail");
     }
 
     private void setInitializedServiceRoleContext() {

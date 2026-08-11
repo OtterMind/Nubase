@@ -48,6 +48,23 @@ public final class AssetsExceptions {
                 "Asset exceeds the maximum allowed size of " + limit + " bytes");
     }
 
+    public static AssetsException versioningRequired() {
+        return new AssetsException(HttpStatus.SERVICE_UNAVAILABLE, "ASSET_VERSIONING_REQUIRED",
+                "Bounded marker storage requires bucket versioning");
+    }
+
+    public static AssetsException versioningCheckFailed() {
+        return new AssetsException(HttpStatus.SERVICE_UNAVAILABLE, "ASSET_VERSIONING_CHECK_FAILED",
+                "Bounded marker storage versioning could not be verified");
+    }
+
+    public static AssetsException boundedPrivateStorageRequired() {
+        return new AssetsException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "ASSET_BOUNDED_PRIVATE_STORAGE_REQUIRED",
+                "Bounded marker storage requires an explicitly private backend");
+    }
+
     public static AssetsException forbidden() {
         return new AssetsException(HttpStatus.FORBIDDEN, "SERVICE_ROLE_REQUIRED",
                 "This endpoint requires the project's service_role key");
