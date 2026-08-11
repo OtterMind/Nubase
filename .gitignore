@@ -64,6 +64,9 @@ application-secrets.yml
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+!.env.*.example
 .nubase/
 
 # OS
