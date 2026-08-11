@@ -122,7 +122,8 @@ public class PkceService {
         if (StringUtils.isBlank(method)) {
             return FlowState.METHOD_S256;
         }
-        return method.toLowerCase().contains("plain") ? FlowState.METHOD_PLAIN : FlowState.METHOD_S256;
+        return FlowState.METHOD_PLAIN.equalsIgnoreCase(method)
+                ? FlowState.METHOD_PLAIN : FlowState.METHOD_S256;
     }
 
     private boolean constantTimeEquals(String a, String b) {
