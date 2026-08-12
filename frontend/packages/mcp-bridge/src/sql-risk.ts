@@ -119,6 +119,15 @@ function classifyStatement(tokens: Token[]): SqlRisk {
   if (DANGEROUS_WORDS.has(firstWord)) return "DANGEROUS";
   if (SCHEMA_WRITE_WORDS.has(firstWord)) return "SCHEMA_WRITE";
   if (DATA_WRITE_WORDS.has(firstWord)) return "DATA_WRITE";
+  if (firstWord === "select")
+    return findWordAtDepth(
+      tokens,
+      "into",
+      tokens[firstWordIndex]!.depth,
+      firstWordIndex + 1,
+    ) >= 0
+      ? "SCHEMA_WRITE"
+      : "READ";
   if (READ_WORDS.has(firstWord)) return "READ";
   return "UNKNOWN";
 }

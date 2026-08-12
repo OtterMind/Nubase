@@ -100,6 +100,12 @@ public class SqlRiskClassifier {
         if (DATA_WRITE_WORDS.contains(firstWord)) {
             return SqlRisk.DATA_WRITE;
         }
+        if (firstWord.equals("select")) {
+            return findWordAtDepth(
+                    tokens, "into", tokens.get(firstWordIndex).depth(), firstWordIndex + 1) >= 0
+                    ? SqlRisk.SCHEMA_WRITE
+                    : SqlRisk.READ;
+        }
         if (READ_WORDS.contains(firstWord)) {
             return SqlRisk.READ;
         }

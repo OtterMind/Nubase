@@ -7,6 +7,27 @@
     "hasUnknown": false
   },
   {
+    "name": "select into creates a table",
+    "sql": "SELECT * INTO new_users FROM users",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "select into temp creates a table",
+    "sql": "SELECT id INTO TEMP t2 FROM users",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "nested select into does not upgrade outer select",
+    "sql": "SELECT (SELECT id INTO nested_copy FROM users LIMIT 1)",
+    "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
     "name": "parenthesized select",
     "sql": "(SELECT 1)",
     "risk": "READ",
