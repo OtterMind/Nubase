@@ -114,3 +114,8 @@ node_modules/
 **/.turbo/
 **/*.tsbuildinfo
 /docs/articles/wechat/
+
+# GOAI video package: retain only the curated final delivery files.
+/artifacts/goai-infra-video/*
+!/artifacts/goai-infra-video/README.md
+!/artifacts/goai-infra-video/nubase-goai-agent-infra-zh-CN-1080p.mp4
