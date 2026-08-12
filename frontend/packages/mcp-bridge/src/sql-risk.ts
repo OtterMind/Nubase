@@ -82,6 +82,8 @@ function classifyStatement(tokens: Token[]): SqlRisk {
   if (firstWord === "prepare" || firstWord === "execute") return "UNKNOWN";
   if (firstWord === "do") return "DANGEROUS";
   if (firstWord === "explain") return classifyExplain(tokens, firstWordIndex);
+  if (firstWord === "with") return classifyWith(tokens, firstWordIndex);
+  if (firstWord === "set") return classifySet(tokens, firstWordIndex);
   if (CONTROL_WORDS.has(firstWord)) return "READ";
   if (
     firstWord === "analyze" ||
@@ -93,14 +95,41 @@ function classifyStatement(tokens: Token[]): SqlRisk {
     return nextWord(tokens, firstWordIndex) === "full"
       ? "DANGEROUS"
       : "DATA_WRITE";
-
-  return classifyOperations(tokens);
+  if (firstWord === "copy")
+    return hasWordSequenceAtDepth(
+      tokens,
+      ["from", "program"],
+      tokens[firstWordIndex]!.depth,
+    ) ||
+      hasWordSequenceAtDepth(
+        tokens,
+        ["to", "program"],
+        tokens[firstWordIndex]!.depth,
+      )
+      ? "DANGEROUS"
+      : "DATA_WRITE";
+  if (firstWord === "delete") {
+    if (nextWordAtDepth(tokens, firstWordIndex) !== "from") return "UNKNOWN";
+    return deleteHasWhere(tokens, firstWordIndex)
+      ? "DATA_WRITE"
+      : "DANGEROUS";
+  }
+  if (firstWord === "security" && nextWordAtDepth(tokens, firstWordIndex) === "label")
+    return "SCHEMA_WRITE";
+  if (DANGEROUS_WORDS.has(firstWord)) return "DANGEROUS";
+  if (SCHEMA_WRITE_WORDS.has(firstWord)) return "SCHEMA_WRITE";
+  if (DATA_WRITE_WORDS.has(firstWord)) return "DATA_WRITE";
+  if (READ_WORDS.has(firstWord)) return "READ";
+  return "UNKNOWN";
 }
 
 function classifyExplain(tokens: Token[], explainIndex: number): SqlRisk {
   const commandIndex = tokens.findIndex(
     (token, index) =>
-      index > explainIndex && token.word && EXPLAIN_COMMANDS.has(token.value),
+      index > explainIndex &&
+      token.word &&
+      token.depth === tokens[explainIndex]!.depth &&
+      EXPLAIN_COMMANDS.has(token.value),
   );
   if (commandIndex < 0) return "UNKNOWN";
 
@@ -120,57 +149,47 @@ function classifyExplain(tokens: Token[], explainIndex: number): SqlRisk {
   return classifyStatement(tokens.slice(commandIndex));
 }
 
-function classifyOperations(tokens: Token[]): SqlRisk {
+function classifyWith(tokens: Token[], withIndex: number): SqlRisk {
+  const rootDepth = tokens[withIndex]!.depth;
   let risk: SqlRisk = "UNKNOWN";
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]!;
-    if (!token.word) continue;
+  let index = withIndex + 1;
 
-    if (DANGEROUS_WORDS.has(token.value)) {
-      risk = maxRisk(risk, "DANGEROUS");
+  while (index < tokens.length) {
+    const asIndex = findWordAtDepth(tokens, "as", rootDepth, index);
+    if (asIndex < 0) break;
+    const openIndex = findTokenAtDepth(tokens, "(", rootDepth, asIndex + 1);
+    if (openIndex < 0) break;
+    const closeIndex = matchingCloseIndex(tokens, openIndex, rootDepth);
+    if (closeIndex < 0) break;
+
+    risk = maxRisk(risk, classifyStatement(tokens.slice(openIndex + 1, closeIndex)));
+    index = closeIndex + 1;
+
+    const separatorIndex = nextSignificantIndex(tokens, index);
+    if (separatorIndex < 0) return risk;
+    if (tokens[separatorIndex]!.value === ",") {
+      index = separatorIndex + 1;
       continue;
     }
-    if (token.value === "vacuum") {
-      risk = maxRisk(
-        risk,
-        nextWord(tokens, index) === "full" ? "DANGEROUS" : "DATA_WRITE",
-      );
-      continue;
-    }
-    if (token.value === "do") {
-      risk = maxRisk(risk, "DANGEROUS");
-      continue;
-    }
-    if (token.value === "delete") {
-      risk = maxRisk(
-        risk,
-        deleteHasWhere(tokens, index) ? "DATA_WRITE" : "DANGEROUS",
-      );
-      continue;
-    }
-    if (token.value === "security" && nextWord(tokens, index) === "label") {
-      risk = maxRisk(risk, "SCHEMA_WRITE");
-      continue;
-    }
-    if (SCHEMA_WRITE_WORDS.has(token.value)) {
-      risk = maxRisk(risk, "SCHEMA_WRITE");
-      continue;
-    }
-    if (DATA_WRITE_WORDS.has(token.value)) {
-      risk = maxRisk(risk, "DATA_WRITE");
-      continue;
-    }
-    if (
-      token.value === "analyze" ||
-      token.value === "refresh" ||
-      token.value === "lock"
-    ) {
-      risk = maxRisk(risk, "DATA_WRITE");
-      continue;
-    }
-    if (READ_WORDS.has(token.value)) risk = maxRisk(risk, "READ");
+    return maxRisk(risk, classifyStatement(tokens.slice(separatorIndex)));
   }
   return risk;
+}
+
+function classifySet(tokens: Token[], setIndex: number): SqlRisk {
+  const next = nextWordAtDepth(tokens, setIndex);
+  if (next === "role") return "DANGEROUS";
+  if (next === "session" || next === "local") {
+    const modifierIndex = nextWordIndexAtDepth(tokens, setIndex);
+    if (
+      modifierIndex !== undefined &&
+      ["role", "authorization"].includes(
+        nextWordAtDepth(tokens, modifierIndex) ?? "",
+      )
+    )
+      return "DANGEROUS";
+  }
+  return "READ";
 }
 
 function deleteHasWhere(tokens: Token[], deleteIndex: number): boolean {
@@ -191,6 +210,81 @@ function nextWord(tokens: Token[], fromIndex: number): string | undefined {
     if (token.word) return token.value;
   }
   return undefined;
+}
+
+function nextWordAtDepth(tokens: Token[], fromIndex: number): string | undefined {
+  const index = nextWordIndexAtDepth(tokens, fromIndex);
+  return index === undefined ? undefined : tokens[index]!.value;
+}
+
+function nextWordIndexAtDepth(
+  tokens: Token[],
+  fromIndex: number,
+): number | undefined {
+  const depth = tokens[fromIndex]!.depth;
+  for (let index = fromIndex + 1; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token.word && token.depth === depth) return index;
+  }
+  return undefined;
+}
+
+function hasWordSequenceAtDepth(
+  tokens: Token[],
+  values: string[],
+  depth: number,
+): boolean {
+  const words = tokens
+    .filter((token) => token.word && token.depth === depth)
+    .map((token) => token.value);
+  return words.some((_, index) =>
+    values.every((value, offset) => words[index + offset] === value),
+  );
+}
+
+function findWordAtDepth(
+  tokens: Token[],
+  value: string,
+  depth: number,
+  fromIndex: number,
+): number {
+  return tokens.findIndex(
+    (token, index) =>
+      index >= fromIndex &&
+      token.word &&
+      token.depth === depth &&
+      token.value === value,
+  );
+}
+
+function findTokenAtDepth(
+  tokens: Token[],
+  value: string,
+  depth: number,
+  fromIndex: number,
+): number {
+  return tokens.findIndex(
+    (token, index) =>
+      index >= fromIndex && token.depth === depth && token.value === value,
+  );
+}
+
+function matchingCloseIndex(
+  tokens: Token[],
+  openIndex: number,
+  depth: number,
+): number {
+  return tokens.findIndex(
+    (token, index) =>
+      index > openIndex && token.depth === depth && token.value === ")",
+  );
+}
+
+function nextSignificantIndex(tokens: Token[], fromIndex: number): number {
+  for (let index = fromIndex; index < tokens.length; index += 1) {
+    if (tokens[index]!.value !== "?") return index;
+  }
+  return -1;
 }
 
 function scanStatements(sql: string | undefined): Token[][] {

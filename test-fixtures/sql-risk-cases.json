@@ -41,6 +41,20 @@
     "statementCount": 1,
     "hasUnknown": false
   },
+  {
+    "name": "read CTE with dangerous main delete",
+    "sql": "WITH x AS (SELECT 1) DELETE FROM todos",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "multiple CTEs retain highest root operation",
+    "sql": "WITH x AS (SELECT 1), d AS (DELETE FROM todos WHERE id = 1 RETURNING *) SELECT * FROM d",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
 
   {
     "name": "explain does not execute delete",
@@ -59,6 +73,20 @@
   {
     "name": "explain option list analyze full delete",
     "sql": "EXPLAIN (ANALYZE, BUFFERS) DELETE FROM users",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "explain format before analyze full delete",
+    "sql": "EXPLAIN (FORMAT JSON, ANALYZE) DELETE FROM users",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "explain analyze data-modifying CTE",
+    "sql": "EXPLAIN ANALYZE WITH d AS (DELETE FROM users RETURNING *) SELECT * FROM d",
     "risk": "DANGEROUS",
     "statementCount": 1,
     "hasUnknown": false
@@ -124,6 +152,55 @@
     "name": "schema write",
     "sql": "ALTER TABLE users ADD COLUMN active boolean",
     "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "foreign key cascade remains schema write",
+    "sql": "CREATE TABLE posts (user_id bigint REFERENCES users(id) ON DELETE CASCADE)",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "delete policy remains schema write",
+    "sql": "CREATE POLICY delete_todos ON todos FOR DELETE USING (owner_id = auth.uid())",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "grant delete remains schema write",
+    "sql": "GRANT SELECT, INSERT, UPDATE, DELETE ON todos TO authenticated",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "upsert remains data write",
+    "sql": "INSERT INTO todos(id, n) VALUES (1, 1) ON CONFLICT (id) DO UPDATE SET n = 1",
+    "risk": "DATA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "delete trigger remains schema write",
+    "sql": "CREATE TRIGGER audit_delete AFTER DELETE ON todos FOR EACH ROW EXECUTE FUNCTION audit_todo()",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "alter drop constraint remains schema write",
+    "sql": "ALTER TABLE todos DROP CONSTRAINT todos_pkey",
+    "risk": "SCHEMA_WRITE",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "select for update remains read",
+    "sql": "SELECT * FROM todos WHERE id = 1 FOR UPDATE",
+    "risk": "READ",
     "statementCount": 1,
     "hasUnknown": false
   },
@@ -231,6 +308,55 @@
     "name": "reset",
     "sql": "RESET search_path",
     "risk": "READ",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "set role is dangerous",
+    "sql": "SET ROLE postgres",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "set local role is dangerous",
+    "sql": "SET LOCAL ROLE postgres",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "set session role is dangerous",
+    "sql": "SET SESSION ROLE postgres",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "set session authorization is dangerous",
+    "sql": "SET SESSION AUTHORIZATION postgres",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "copy from program is dangerous",
+    "sql": "COPY todos FROM PROGRAM 'generate-todos'",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "copy to program is dangerous",
+    "sql": "COPY todos TO PROGRAM 'consume-todos'",
+    "risk": "DANGEROUS",
+    "statementCount": 1,
+    "hasUnknown": false
+  },
+  {
+    "name": "copy table named program is a normal data write",
+    "sql": "COPY program FROM STDIN",
+    "risk": "DATA_WRITE",
     "statementCount": 1,
     "hasUnknown": false
   },

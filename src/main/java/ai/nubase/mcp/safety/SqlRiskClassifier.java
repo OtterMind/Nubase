@@ -61,6 +61,12 @@ public class SqlRiskClassifier {
         if (firstWord.equals("explain")) {
             return classifyExplain(tokens, firstWordIndex);
         }
+        if (firstWord.equals("with")) {
+            return classifyWith(tokens, firstWordIndex);
+        }
+        if (firstWord.equals("set")) {
+            return classifySet(tokens, firstWordIndex);
+        }
         if (CONTROL_WORDS.contains(firstWord)) {
             return SqlRisk.READ;
         }
@@ -70,15 +76,43 @@ public class SqlRiskClassifier {
         if (firstWord.equals("vacuum")) {
             return "full".equals(nextWord(tokens, firstWordIndex)) ? SqlRisk.DANGEROUS : SqlRisk.DATA_WRITE;
         }
-
-        return classifyOperations(tokens);
+        if (firstWord.equals("copy")) {
+            return hasWordSequenceAtDepth(tokens, List.of("from", "program"), tokens.get(firstWordIndex).depth())
+                            || hasWordSequenceAtDepth(tokens, List.of("to", "program"), tokens.get(firstWordIndex).depth())
+                    ? SqlRisk.DANGEROUS
+                    : SqlRisk.DATA_WRITE;
+        }
+        if (firstWord.equals("delete")) {
+            if (!"from".equals(nextWordAtDepth(tokens, firstWordIndex))) {
+                return SqlRisk.UNKNOWN;
+            }
+            return deleteHasWhere(tokens, firstWordIndex) ? SqlRisk.DATA_WRITE : SqlRisk.DANGEROUS;
+        }
+        if (firstWord.equals("security") && "label".equals(nextWordAtDepth(tokens, firstWordIndex))) {
+            return SqlRisk.SCHEMA_WRITE;
+        }
+        if (DANGEROUS_WORDS.contains(firstWord)) {
+            return SqlRisk.DANGEROUS;
+        }
+        if (SCHEMA_WRITE_WORDS.contains(firstWord)) {
+            return SqlRisk.SCHEMA_WRITE;
+        }
+        if (DATA_WRITE_WORDS.contains(firstWord)) {
+            return SqlRisk.DATA_WRITE;
+        }
+        if (READ_WORDS.contains(firstWord)) {
+            return SqlRisk.READ;
+        }
+        return SqlRisk.UNKNOWN;
     }
 
     private SqlRisk classifyExplain(List<Token> tokens, int explainIndex) {
         int commandIndex = -1;
         for (int index = explainIndex + 1; index < tokens.size(); index++) {
             Token token = tokens.get(index);
-            if (token.word() && EXPLAIN_COMMANDS.contains(token.value())) {
+            if (token.word()
+                    && token.depth() == tokens.get(explainIndex).depth()
+                    && EXPLAIN_COMMANDS.contains(token.value())) {
                 commandIndex = index;
                 break;
             }
@@ -103,35 +137,54 @@ public class SqlRiskClassifier {
         return classifyStatement(tokens.subList(commandIndex, tokens.size()));
     }
 
-    private SqlRisk classifyOperations(List<Token> tokens) {
+    private SqlRisk classifyWith(List<Token> tokens, int withIndex) {
+        int rootDepth = tokens.get(withIndex).depth();
         SqlRisk risk = SqlRisk.UNKNOWN;
-        for (int index = 0; index < tokens.size(); index++) {
-            Token token = tokens.get(index);
-            if (!token.word()) {
-                continue;
+        int index = withIndex + 1;
+
+        while (index < tokens.size()) {
+            int asIndex = findWordAtDepth(tokens, "as", rootDepth, index);
+            if (asIndex < 0) {
+                break;
+            }
+            int openIndex = findTokenAtDepth(tokens, "(", rootDepth, asIndex + 1);
+            if (openIndex < 0) {
+                break;
+            }
+            int closeIndex = matchingCloseIndex(tokens, openIndex, rootDepth);
+            if (closeIndex < 0) {
+                break;
             }
 
-            if (DANGEROUS_WORDS.contains(token.value())) {
-                risk = max(risk, SqlRisk.DANGEROUS);
-            } else if (token.value().equals("vacuum")) {
-                risk = max(risk, "full".equals(nextWord(tokens, index)) ? SqlRisk.DANGEROUS : SqlRisk.DATA_WRITE);
-            } else if (token.value().equals("do")) {
-                risk = max(risk, SqlRisk.DANGEROUS);
-            } else if (token.value().equals("delete")) {
-                risk = max(risk, deleteHasWhere(tokens, index) ? SqlRisk.DATA_WRITE : SqlRisk.DANGEROUS);
-            } else if (token.value().equals("security") && "label".equals(nextWord(tokens, index))) {
-                risk = max(risk, SqlRisk.SCHEMA_WRITE);
-            } else if (SCHEMA_WRITE_WORDS.contains(token.value())) {
-                risk = max(risk, SqlRisk.SCHEMA_WRITE);
-            } else if (DATA_WRITE_WORDS.contains(token.value())) {
-                risk = max(risk, SqlRisk.DATA_WRITE);
-            } else if (token.value().equals("analyze") || token.value().equals("refresh") || token.value().equals("lock")) {
-                risk = max(risk, SqlRisk.DATA_WRITE);
-            } else if (READ_WORDS.contains(token.value())) {
-                risk = max(risk, SqlRisk.READ);
+            risk = max(risk, classifyStatement(tokens.subList(openIndex + 1, closeIndex)));
+            index = closeIndex + 1;
+
+            int separatorIndex = nextSignificantIndex(tokens, index);
+            if (separatorIndex < 0) {
+                return risk;
             }
+            if (tokens.get(separatorIndex).value().equals(",")) {
+                index = separatorIndex + 1;
+                continue;
+            }
+            return max(risk, classifyStatement(tokens.subList(separatorIndex, tokens.size())));
         }
         return risk;
+    }
+
+    private SqlRisk classifySet(List<Token> tokens, int setIndex) {
+        String next = nextWordAtDepth(tokens, setIndex);
+        if ("role".equals(next)) {
+            return SqlRisk.DANGEROUS;
+        }
+        if ("session".equals(next) || "local".equals(next)) {
+            Integer modifierIndex = nextWordIndexAtDepth(tokens, setIndex);
+            String operation = modifierIndex == null ? null : nextWordAtDepth(tokens, modifierIndex);
+            if ("role".equals(operation) || "authorization".equals(operation)) {
+                return SqlRisk.DANGEROUS;
+            }
+        }
+        return SqlRisk.READ;
     }
 
     private boolean deleteHasWhere(List<Token> tokens, int deleteIndex) {
@@ -171,6 +224,74 @@ public class SqlRiskClassifier {
             }
         }
         return null;
+    }
+
+    private String nextWordAtDepth(List<Token> tokens, int fromIndex) {
+        Integer index = nextWordIndexAtDepth(tokens, fromIndex);
+        return index == null ? null : tokens.get(index).value();
+    }
+
+    private Integer nextWordIndexAtDepth(List<Token> tokens, int fromIndex) {
+        int depth = tokens.get(fromIndex).depth();
+        for (int index = fromIndex + 1; index < tokens.size(); index++) {
+            Token token = tokens.get(index);
+            if (token.word() && token.depth() == depth) {
+                return index;
+            }
+        }
+        return null;
+    }
+
+    private boolean hasWordSequenceAtDepth(List<Token> tokens, List<String> values, int depth) {
+        List<String> words = tokens.stream()
+                .filter(token -> token.word() && token.depth() == depth)
+                .map(Token::value)
+                .toList();
+        for (int index = 0; index + values.size() <= words.size(); index++) {
+            if (words.subList(index, index + values.size()).equals(values)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int findWordAtDepth(List<Token> tokens, String value, int depth, int fromIndex) {
+        for (int index = fromIndex; index < tokens.size(); index++) {
+            Token token = tokens.get(index);
+            if (token.word() && token.depth() == depth && token.value().equals(value)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private int findTokenAtDepth(List<Token> tokens, String value, int depth, int fromIndex) {
+        for (int index = fromIndex; index < tokens.size(); index++) {
+            Token token = tokens.get(index);
+            if (token.depth() == depth && token.value().equals(value)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private int matchingCloseIndex(List<Token> tokens, int openIndex, int depth) {
+        for (int index = openIndex + 1; index < tokens.size(); index++) {
+            Token token = tokens.get(index);
+            if (token.depth() == depth && token.value().equals(")")) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private int nextSignificantIndex(List<Token> tokens, int fromIndex) {
+        for (int index = fromIndex; index < tokens.size(); index++) {
+            if (!tokens.get(index).value().equals("?")) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private List<List<Token>> scanStatements(String sql) {

@@ -7,6 +7,7 @@ import ai.nubase.common.context.MultiTenancyContext;
 import ai.nubase.common.enums.DatabaseInitStatus;
 import ai.nubase.mcp.safety.SqlRiskClassifier;
 import ai.nubase.postgrest.multidb.DatabaseConfig;
+import ai.nubase.postgrest.multidb.SchemaCacheManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.junit.jupiter.api.AfterEach;
@@ -18,6 +19,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -100,20 +102,36 @@ class DatabaseMcpToolsTest {
 
     @Test
     void dangerousEnvironmentOverrideAllowsServerExecutionPath() {
+        SchemaCacheManager schemaCacheManager = mock(SchemaCacheManager.class);
+        SqlExecutionService overriddenSqlExecutionService = mock(SqlExecutionService.class);
+        when(overriddenSqlExecutionService.executeSql(any())).thenReturn(SqlExecutionResponse.builder()
+                .success(true)
+                .rowsAffected(1)
+                .executionTimeMs(2L)
+                .build());
+
         new ApplicationContextRunner()
                 .withPropertyValues("NUBASE_ALLOW_DANGEROUS_SQL=true")
                 .withBean(DatabaseMcpTools.class, () -> new DatabaseMcpTools(
-                        null, mock(SqlExecutionService.class), null, null, new SqlRiskClassifier()))
+                        schemaCacheManager, overriddenSqlExecutionService, null, null, new SqlRiskClassifier()))
                 .run(context -> {
-                    setServiceRoleContextWithoutDatabase();
+                    setInitializedServiceRoleContext();
 
                     @SuppressWarnings("unchecked")
-                    Map<String, Object> response = (Map<String, Object>) context.getBean(DatabaseMcpTools.class)
+                    Map<String, Object> dangerousResponse = (Map<String, Object>) context.getBean(DatabaseMcpTools.class)
                             .executeSql("drop table users");
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> unknownResponse = (Map<String, Object>) context.getBean(DatabaseMcpTools.class)
+                            .executeSql("execute p");
 
-                    assertThat(response).doesNotContainKey("code");
-                    assertThat(response).containsEntry(
-                            "error", "Database context not found, please ensure the database is initialized");
+                    assertThat(dangerousResponse)
+                            .containsEntry("success", true)
+                            .containsEntry("risk", "DANGEROUS");
+                    assertThat(unknownResponse)
+                            .containsEntry("success", true)
+                            .containsEntry("risk", "UNKNOWN");
+                    verify(overriddenSqlExecutionService, times(2)).executeSql(any());
+                    verify(schemaCacheManager, times(2)).reloadSchemaCache("demo");
                 });
     }
 
