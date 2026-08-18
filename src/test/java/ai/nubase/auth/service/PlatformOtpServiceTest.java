@@ -12,6 +12,7 @@ import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -95,6 +96,19 @@ class PlatformOtpServiceTest {
     }
 
     @Test
+    void issueNormalizesEmailIndependentlyOfDefaultLocale() {
+        Locale previous = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            service.issue("ADMIN@EXAMPLE.COM", Purpose.LOGIN);
+
+            verify(rateLimiter).checkRate("platform_otp:login", "admin@example.com");
+        } finally {
+            Locale.setDefault(previous);
+        }
+    }
+
+    @Test
     void verifyWrongCodeThrowsAndKeepsToken() {
         PlatformOneTimeToken stored = token(
                 "signup",
@@ -140,3 +154,4 @@ class PlatformOtpServiceTest {
                 .build();
     }
 }
+    

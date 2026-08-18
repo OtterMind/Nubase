@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -135,7 +136,7 @@ public class PlatformAuthService {
 
     @Transactional("metadataTransactionManager")
     public AuthOutcome signUp(PlatformSignUpRequest request) {
-        String email = request.getEmail().trim().toLowerCase();
+        String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
 
         // An account that exists but never confirmed its email is an *unfinished* signup, not a real
         // conflict — the email owner hasn't been proven yet. Treat a repeat signup as "continue": refresh
@@ -188,7 +189,7 @@ public class PlatformAuthService {
     @Transactional("metadataTransactionManager")
     public AuthOutcome signIn(PlatformSignInRequest request) {
         String email = request.getEmail().trim();
-        String rlKey = "platform_login:" + email.toLowerCase();
+        String rlKey = "platform_login:" + email.toLowerCase(Locale.ROOT);
         // Throttle online password guessing against Studio accounts (mirrors tenant auth).
         rateLimiter.assertNotLockedOut(rlKey);
         Optional<PlatformUser> maybe = platformUserRepository.findByEmailIgnoreCase(email);
@@ -222,7 +223,7 @@ public class PlatformAuthService {
      */
     @Transactional("metadataTransactionManager")
     public PlatformAuthResponse verifyEmail(String rawEmail, String code) {
-        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase();
+        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase(Locale.ROOT);
         PlatformUser user = platformUserRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid or expired code"));
         if (!Boolean.TRUE.equals(user.getIsActive())) {
@@ -241,7 +242,7 @@ public class PlatformAuthService {
     /** Re-send a verification code for an unverified account. No-op (silent) for unknown/verified emails. */
     @Transactional("metadataTransactionManager")
     public void resendVerification(String rawEmail) {
-        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase();
+        String email = rawEmail == null ? "" : rawEmail.trim().toLowerCase(Locale.ROOT);
         platformUserRepository.findByEmailIgnoreCase(email).ifPresent(user -> {
             if (Boolean.TRUE.equals(user.getIsActive()) && user.getEmailVerifiedAt() == null) {
                 otpService.issue(email, Purpose.LOGIN);
@@ -282,7 +283,7 @@ public class PlatformAuthService {
      */
     @Transactional("metadataTransactionManager")
     public PlatformAuthResponse oauthSignIn(String rawEmail, String fullName) {
-        String email = rawEmail == null ? null : rawEmail.trim().toLowerCase();
+        String email = rawEmail == null ? null : rawEmail.trim().toLowerCase(Locale.ROOT);
         if (email == null || email.isEmpty()) {
             throw new IllegalArgumentException("OAuth identity has no email address");
         }
@@ -400,3 +401,4 @@ public class PlatformAuthService {
                 .build();
     }
 }
+    
