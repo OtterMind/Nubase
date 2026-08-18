@@ -1,61 +1,68 @@
 package ai.nubase.mcp.safety;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class SqlRiskClassifierTest {
 
+    private static final Path SHARED_CASES = Path.of("test-fixtures", "sql-risk-cases.json");
     private final SqlRiskClassifier classifier = new SqlRiskClassifier();
 
     @Test
-    void classifiesReadQueries() {
-        assertThat(classifier.classify("select * from todos")).isEqualTo(SqlRisk.READ);
-        assertThat(classifier.classify("with recent as (select * from todos) select * from recent"))
-                .isEqualTo(SqlRisk.READ);
+    void matchesSharedRiskAndStatementBoundaryContract() throws Exception {
+        for (RiskCase fixture : loadCases()) {
+            assertThat(classifier.classify(fixture.sql()))
+                    .as("%s: risk", fixture.name())
+                    .isEqualTo(SqlRisk.valueOf(fixture.risk()));
+            assertThat(classifier.countStatements(fixture.sql()))
+                    .as("%s: statement count", fixture.name())
+                    .isEqualTo(fixture.statementCount());
+        }
     }
 
     @Test
-    void classifiesSchemaWrites() {
-        assertThat(classifier.classify("create table todos (id bigserial primary key)"))
-                .isEqualTo(SqlRisk.SCHEMA_WRITE);
-        assertThat(classifier.classify("alter table todos add column done boolean"))
-                .isEqualTo(SqlRisk.SCHEMA_WRITE);
+    void reportsUnknownStatementsIndependentlyOfHighestKnownRisk() throws Exception {
+        Optional<Method> analyzeMethod = Arrays.stream(SqlRiskClassifier.class.getMethods())
+                .filter(method -> method.getName().equals("analyze"))
+                .filter(method -> Arrays.equals(method.getParameterTypes(), new Class<?>[]{String.class}))
+                .findFirst();
+        assertThat(analyzeMethod).as("SqlRiskClassifier must expose analyze(String)").isPresent();
+
+        Method analyze = analyzeMethod.orElseThrow();
+        for (RiskCase fixture : loadCases()) {
+            Object result = analyze.invoke(classifier, fixture.sql());
+            assertThat(result.getClass().getMethod("risk").invoke(result))
+                    .as("%s: detailed risk", fixture.name())
+                    .isEqualTo(SqlRisk.valueOf(fixture.risk()));
+            assertThat(result.getClass().getMethod("statementCount").invoke(result))
+                    .as("%s: detailed statement count", fixture.name())
+                    .isEqualTo(fixture.statementCount());
+            assertThat(result.getClass().getMethod("hasUnknown").invoke(result))
+                    .as("%s: sticky unknown", fixture.name())
+                    .isEqualTo(fixture.hasUnknown());
+        }
     }
 
-    @Test
-    void classifiesDataWrites() {
-        assertThat(classifier.classify("insert into todos(text) values ('ship')"))
-                .isEqualTo(SqlRisk.DATA_WRITE);
-        assertThat(classifier.classify("update todos set done = true"))
-                .isEqualTo(SqlRisk.DATA_WRITE);
-        assertThat(classifier.classify("delete from todos where id = 1"))
-                .isEqualTo(SqlRisk.DATA_WRITE);
+    private List<RiskCase> loadCases() throws Exception {
+        String json = Files.readString(SHARED_CASES);
+        return new ObjectMapper().readValue(json, new TypeReference<>() {});
     }
 
-    @Test
-    void classifiesDangerousStatements() {
-        assertThat(classifier.classify("drop table todos")).isEqualTo(SqlRisk.DANGEROUS);
-        assertThat(classifier.classify("truncate table todos")).isEqualTo(SqlRisk.DANGEROUS);
-        assertThat(classifier.classify("delete from todos")).isEqualTo(SqlRisk.DANGEROUS);
-    }
-
-    @Test
-    void mixedStatementsReturnHighestRisk() {
-        assertThat(classifier.classify("select * from todos; drop table todos;"))
-                .isEqualTo(SqlRisk.DANGEROUS);
-        assertThat(classifier.classify("select * from todos; create table notes(id bigint);"))
-                .isEqualTo(SqlRisk.SCHEMA_WRITE);
-    }
-
-    @Test
-    void countsNonBlankStatements() {
-        assertThat(classifier.countStatements("select 1; ; select 2;")).isEqualTo(2);
-        assertThat(classifier.countStatements(null)).isZero();
-    }
-
-    @Test
-    void blankSqlIsUnknown() {
-        assertThat(classifier.classify(" ")).isEqualTo(SqlRisk.UNKNOWN);
-    }
+    private record RiskCase(
+            String name,
+            String sql,
+            String risk,
+            int statementCount,
+            boolean hasUnknown
+    ) {}
 }

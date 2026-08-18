@@ -175,6 +175,60 @@ test('db_export_schema defaults to the public schema', async () => {
   assert.deepEqual(nth(calls, 0).body, { schemaName: 'public', includeDropStatements: false });
 });
 
+test('sql_dry_run keeps unknown status sticky beside a known read', () => {
+  const { client, restore } = makeClient({ allowSqlExecute: true });
+  try {
+    assert.deepEqual(client.sqlDryRun({ sql: 'select 1; execute p' }), {
+      success: true,
+      risk: 'READ',
+      statementCount: 2,
+      hasUnknown: true,
+      executable: false,
+    });
+  } finally {
+    restore();
+  }
+});
+
+test('sql_execute blocks unknown SQL with a distinct code and no network call', async () => {
+  const { client, calls, restore } = makeClient({ allowSqlExecute: true, allowDangerousSql: false });
+  try {
+    const result = (await client.sqlExecute({ sql: 'select 1; execute p' })) as Record<string, any>;
+    assert.equal(result.success, false);
+    assert.equal(result.code, 'UNCLASSIFIED_SQL_BLOCKED');
+    assert.match(result.remedy, /NUBASE_ALLOW_DANGEROUS_SQL/);
+    assert.equal(result.dryRun.hasUnknown, true);
+    assert.equal(calls.length, 0, 'unclassified SQL must be blocked before fetch');
+  } finally {
+    restore();
+  }
+});
+
+test('sql_execute reports dangerous before unknown when both are present', async () => {
+  const { client, calls, restore } = makeClient({ allowSqlExecute: true, allowDangerousSql: false });
+  try {
+    const result = (await client.sqlExecute({ sql: 'drop table users; execute p' })) as Record<string, any>;
+    assert.equal(result.success, false);
+    assert.equal(result.code, 'DANGEROUS_SQL_BLOCKED');
+    assert.equal(result.dryRun.hasUnknown, true);
+    assert.equal(calls.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test('dangerous override explicitly allows unknown SQL', async () => {
+  const { client, calls, restore } = makeClient({ allowSqlExecute: true, allowDangerousSql: true });
+  try {
+    const result = (await client.sqlExecute({ sql: 'execute p' })) as Record<string, any>;
+    assert.equal(result.risk, 'UNKNOWN');
+    assert.equal(calls.length, 1);
+    assert.equal(nth(calls, 0).url, 'http://localhost:9999/auth/v1/admin/sql/execute');
+  } finally {
+    restore();
+  }
+});
+
 test('sql_execute records a schema change to the nubase.migrations audit trail', async () => {
   const { client, calls, restore } = makeClient({ allowSqlExecute: true, agentId: 'codex', runId: 'run-7' });
   let result: Record<string, any>;
