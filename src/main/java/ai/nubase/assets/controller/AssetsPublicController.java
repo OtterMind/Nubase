@@ -65,9 +65,15 @@ public class AssetsPublicController {
      * HEAD /assets/v1/{path}
      */
     @RequestMapping(value = "/**", method = RequestMethod.HEAD)
-    public ResponseEntity<Void> head(HttpServletRequest request) {
+    public ResponseEntity<Void> head(
+            @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
+            HttpServletRequest request
+    ) {
         AssetFile file = assetsService.getPublicFileOrThrow(RequestUtil.extractPathVariable(request));
         HttpHeaders headers = buildHeaders(file);
+        if (etagMatches(ifNoneMatch, file.getEtag())) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).headers(headers).build();
+        }
         headers.setContentLength(file.getSizeBytes());
         return ResponseEntity.ok().headers(headers).build();
     }
@@ -119,3 +125,4 @@ public class AssetsPublicController {
         return v.startsWith("\"") ? v : "\"" + v + "\"";
     }
 }
+    
