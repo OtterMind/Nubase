@@ -55,6 +55,8 @@ class AppWorkerDeployServiceTest {
 
     @Test
     void deploysAppWorkerAndRecordsDeploymentSteps() {
+        MultiTenancyContext.setContext(MultiTenancyContext.ContextData.builder()
+                .appCode("unrelated-tenant").build());
         UUID deploymentId = UUID.randomUUID();
         when(deploymentService.createForProjectRef(eq("appabc"), any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
                 deploymentId,
@@ -83,7 +85,7 @@ class AppWorkerDeployServiceTest {
                 Instant.parse("2026-06-17T00:00:00Z")
         ));
 
-        var response = service.deploy(metadata(), List.of(serverFile()), List.of(assetFile()));
+        var response = service.deployForProjectRef("appabc", metadata(), List.of(serverFile()), List.of(assetFile()));
 
         assertThat(response.status()).isEqualTo("deployed");
         assertThat(response.deploymentTarget()).isEqualTo("preview");
@@ -153,7 +155,7 @@ class AppWorkerDeployServiceTest {
                 Instant.parse("2026-06-17T00:00:00Z")
         ));
 
-        var response = service.deploy(frontendOnlyMetadata(), List.of(serverFile()), List.of(assetFile()));
+        var response = service.deployForProjectRef("appfrontend", frontendOnlyMetadata(), List.of(serverFile()), List.of(assetFile()));
 
         assertThat(response.status()).isEqualTo("deployed");
         ArgumentCaptor<AppWorkerDeploymentRequest> request = ArgumentCaptor.forClass(AppWorkerDeploymentRequest.class);
@@ -195,7 +197,7 @@ class AppWorkerDeployServiceTest {
         when(deployer.deploy(any(AppWorkerDeploymentRequest.class)))
                 .thenThrow(new AppWorkerDeploymentException("Cloudflare 500"));
 
-        var response = service.deploy(metadata(), List.of(serverFile()), List.of(assetFile()));
+        var response = service.deployForProjectRef("appabc", metadata(), List.of(serverFile()), List.of(assetFile()));
 
         assertThat(response.status()).isEqualTo("failed");
         assertThat(response.previewUrl()).isNull();
@@ -226,7 +228,7 @@ class AppWorkerDeployServiceTest {
                 null
         );
 
-        assertThatThrownBy(() -> service.deploy(metadata, List.of(serverFile()), List.of()))
+        assertThatThrownBy(() -> service.deployForProjectRef("appabc", metadata, List.of(serverFile()), List.of()))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("workerName must equal the project appCode");
 
@@ -242,7 +244,7 @@ class AppWorkerDeployServiceTest {
         service = new AppWorkerDeployService(deploymentService, deployer, properties);
 
         ResponseStatusException exception = catchThrowableOfType(
-                () -> service.deploy(metadata(), List.of(serverFile()), List.of(assetFile())),
+                () -> service.deployForProjectRef("appabc", metadata(), List.of(serverFile()), List.of(assetFile())),
                 ResponseStatusException.class
         );
         assertThat(exception.getStatusCode().value()).isEqualTo(413);
@@ -264,7 +266,7 @@ class AppWorkerDeployServiceTest {
         service = new AppWorkerDeployService(deploymentService, deployer, properties);
 
         ResponseStatusException exception = catchThrowableOfType(
-                () -> service.deploy(metadata(), List.of(serverFile()), List.of(assetFile())),
+                () -> service.deployForProjectRef("appabc", metadata(), List.of(serverFile()), List.of(assetFile())),
                 ResponseStatusException.class
         );
         assertThat(exception.getStatusCode().value()).isEqualTo(413);
@@ -295,7 +297,7 @@ class AppWorkerDeployServiceTest {
                 "dist/client", null, "preview", null, null, null, null, null
         );
 
-        var response = service.deploy(metadata, List.of(serverFile()), List.of());
+        var response = service.deployForProjectRef("appabc", metadata, List.of(serverFile()), List.of());
 
         assertThat(response.status()).isEqualTo("deployed");
         ArgumentCaptor<AppWorkerDeploymentRequest> request = ArgumentCaptor.forClass(AppWorkerDeploymentRequest.class);
@@ -321,7 +323,7 @@ class AppWorkerDeployServiceTest {
                 "dist/client", "appabc.ottermind.app", "production", null, null, null, null, null
         );
 
-        var response = service.deploy(metadata, List.of(serverFile()), List.of());
+        var response = service.deployForProjectRef("appabc", metadata, List.of(serverFile()), List.of());
 
         assertThat(response.status()).isEqualTo("deployed");
         assertThat(response.deploymentTarget()).isEqualTo("production");
@@ -332,6 +334,25 @@ class AppWorkerDeployServiceTest {
         assertThat(request.getValue().deploymentTarget()).isEqualTo(AppWorkerDeploymentTarget.PRODUCTION);
         assertThat(request.getValue().workerName()).isEqualTo("appabc");
         assertThat(request.getValue().previewHost()).isEqualTo("appabc.ottermind.app");
+    }
+
+    @Test
+    void rejectsProjectRefMismatchWithoutCreatingDeployment() {
+        var exception = catchThrowableOfType(() -> service.deployForProjectRef(
+                "another-app", metadata(), List.of(serverFile()), List.of()), ResponseStatusException.class);
+        assertThat(exception.getStatusCode().value()).isEqualTo(403);
+        assertThat(exception.getReason()).isEqualTo("metadata.appCode must match x-nubase-project-ref");
+        org.mockito.Mockito.verifyNoInteractions(deploymentService, deployer);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @org.junit.jupiter.params.provider.ValueSource(strings = "   ")
+    void rejectsMissingProjectRef(String projectRef) {
+        var exception = catchThrowableOfType(() -> service.deployForProjectRef(
+                projectRef, metadata(), List.of(serverFile()), List.of()), ResponseStatusException.class);
+        assertThat(exception.getStatusCode().value()).isEqualTo(400);
+        org.mockito.Mockito.verifyNoInteractions(deploymentService, deployer);
     }
 
     private AppWorkerDeployMetadata metadata() {

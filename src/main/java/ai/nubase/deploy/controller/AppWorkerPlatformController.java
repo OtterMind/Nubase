@@ -61,13 +61,15 @@ public class AppWorkerPlatformController {
 
     @PostMapping(value = "/deploy", consumes = "multipart/form-data")
     public ResponseEntity<AppWorkerDeployResponse> deployAppWorker(
+            @RequestHeader(value = PROJECT_REF_HEADER, required = false) String projectRef,
             @RequestPart("metadata") String metadataJson,
             @RequestPart("serverFile") List<MultipartFile> serverFiles,
             @RequestPart(value = "assetFile", required = false) List<MultipartFile> assetFiles
     ) {
         try {
             AppWorkerDeployMetadata metadata = objectMapper.readValue(metadataJson, AppWorkerDeployMetadata.class);
-            return ResponseEntity.ok(appWorkerDeployService.deploy(metadata, serverFiles, assetFiles));
+            return ResponseEntity.ok(appWorkerDeployService.deployForProjectRef(
+                    requiredProjectRef(projectRef), metadata, serverFiles, assetFiles));
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {

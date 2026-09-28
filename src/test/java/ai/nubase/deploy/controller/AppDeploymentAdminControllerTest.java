@@ -16,7 +16,7 @@ class AppDeploymentAdminControllerTest {
         assertThat(AppDeploymentAdminController.class.isAnnotationPresent(RequireServiceRole.class)).isFalse();
         assertThat(AppWorkerPlatformController.class.isAnnotationPresent(RequireServiceRole.class)).isFalse();
         assertThat(AppWorkerPlatformController.class
-                .getMethod("deployAppWorker", String.class, java.util.List.class, java.util.List.class)
+                .getMethod("deployAppWorker", String.class, String.class, java.util.List.class, java.util.List.class)
                 .isAnnotationPresent(RequireServiceRole.class)).isFalse();
     }
 

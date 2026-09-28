@@ -25,6 +25,20 @@ The remaining modules support them: **AI Gateway** (`gateway_*`) routes LLM call
 
 Start every session with `nubase_overview()` (one-shot backend state) and `memory_context({ task })`.
 
+### Platform-managed App Worker deployments
+
+The platform control-plane endpoint `POST /deployments/platform/v1/app-workers/deploy`
+accepts multipart `metadata`, `serverFile`, and optional `assetFile` parts. It requires
+platform super-admin authentication and an explicit `x-nubase-project-ref` header
+matching `metadata.appCode`. A missing or blank project header returns `400`; a
+project mismatch returns `403` before any deployment is created. Worker names must
+still equal the app code or start with `<appCode>-`.
+
+The target project comes from the current request, not a thread-local tenant context.
+Request-boundary cleanup runs before authentication and after request processing,
+including platform routes and failed response writes, while preserving the tenant
+context established by the AI gateway during the current request.
+
 ## 0. Preferred path: deploy manifest
 
 For Codex / Claude Code, prefer one manifest-driven deploy when the app has a static frontend, optional edge functions, optional schema migrations, and optional cron jobs:

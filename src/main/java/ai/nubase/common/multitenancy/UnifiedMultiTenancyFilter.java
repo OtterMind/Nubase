@@ -155,14 +155,17 @@ public class UnifiedMultiTenancyFilter extends OncePerRequestFilter {
             }
             handleException(response, e.getMessage());
         } finally {
-            if (requestPath.startsWith("/mcp")) {
-                // MCP requests use a dedicated logger
-                logRequest(cachingRequest);
-                logResponse(cachingResponse, 100);
+            try {
+                if (requestPath.startsWith("/mcp")) {
+                    // MCP requests use a dedicated logger
+                    logRequest(cachingRequest);
+                    logResponse(cachingResponse, 100);
+                }
+                cachingResponse.copyBodyToResponse();
+            } finally {
+                // Response writes can fail when the client disconnects.
+                MultiTenancyContext.clear();
             }
-            cachingResponse.copyBodyToResponse();
-            // 4. Clear the ThreadLocal to prevent thread pollution
-            MultiTenancyContext.clear();
         }
     }
 

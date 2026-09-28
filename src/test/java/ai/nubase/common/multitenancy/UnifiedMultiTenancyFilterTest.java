@@ -16,11 +16,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -117,6 +121,38 @@ class UnifiedMultiTenancyFilterTest {
         assertThat(response.getStatus()).isEqualTo(401);
         assertThat(response.getContentAsString())
                 .contains("x-nubase-project-ref does not match apikey ref");
+    }
+
+    @Test
+    void clearsContextWhenResponseWriteFailsBeforeNextDeploymentOnSameThread() throws Exception {
+        var repository = mock(DatabaseConfigRepository.class);
+        when(repository.findByAppCode("appabc")).thenReturn(databaseConfig("appabc"));
+        var filter = filter(repository, mock(RoutingDataSource.class));
+        var response = new MockHttpServletResponse() {
+            @Override
+            public ServletOutputStream getOutputStream() {
+                return new ServletOutputStream() {
+                    @Override public boolean isReady() { return true; }
+                    @Override public void setWriteListener(WriteListener listener) {}
+                    @Override public void write(int value) throws IOException {
+                        throw new IOException("simulated client disconnect");
+                    }
+                };
+            }
+        };
+
+        assertThatThrownBy(() -> filter.doFilter(requestWithProjectRef("appabc", "appabc"), response,
+                (request, cachedResponse) -> {
+                    assertThat(MultiTenancyContext.getAppCode()).isEqualTo("appabc");
+                    cachedResponse.getOutputStream().write(1);
+                }))
+                .isInstanceOf(IOException.class)
+                .hasMessage("simulated client disconnect");
+        assertThat(MultiTenancyContext.getContext()).isNull();
+
+        var deploy = new MockHttpServletRequest("POST", "/deployments/platform/v1/app-workers/deploy");
+        filter.doFilter(deploy, new MockHttpServletResponse(), (request, deployResponse) ->
+                assertThat(MultiTenancyContext.getContext()).isNull());
     }
 
     private UnifiedMultiTenancyFilter filter(

@@ -1,6 +1,5 @@
 package ai.nubase.deploy.service;
 
-import ai.nubase.common.context.MultiTenancyContext;
 import ai.nubase.deploy.dto.AppDeploymentDtos.AppWorkerDeployMetadata;
 import ai.nubase.deploy.dto.AppDeploymentDtos.AppWorkerDeployResponse;
 import ai.nubase.deploy.dto.AppDeploymentDtos.CompleteDeploymentRequest;
@@ -31,13 +30,14 @@ public class AppWorkerDeployService {
     private final AppWorkerDeployer deployer;
     private final AppWorkerDeployProperties properties;
 
-    public AppWorkerDeployResponse deploy(
+    public AppWorkerDeployResponse deployForProjectRef(
+            String projectRef,
             AppWorkerDeployMetadata metadata,
             List<MultipartFile> serverFiles,
             List<MultipartFile> assetFiles
     ) {
-        validate(metadata, serverFiles, assetFiles);
-        String appCode = metadata.appCode().trim();
+        validate(projectRef, metadata, serverFiles, assetFiles);
+        String appCode = projectRef.trim();
         String workerName = StringUtils.hasText(metadata.workerName()) ? metadata.workerName().trim() : appCode;
         AppWorkerDeploymentTarget deploymentTarget = deploymentTarget(metadata.deploymentTarget());
         String previewHost = StringUtils.hasText(metadata.previewHost())
@@ -146,19 +146,21 @@ public class AppWorkerDeployService {
         }
     }
 
-    private void validate(AppWorkerDeployMetadata metadata, List<MultipartFile> serverFiles, List<MultipartFile> assetFiles) {
+    private void validate(String projectRef, AppWorkerDeployMetadata metadata, List<MultipartFile> serverFiles, List<MultipartFile> assetFiles) {
+        if (!StringUtils.hasText(projectRef)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "x-nubase-project-ref is required");
+        }
         if (metadata == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metadata is required");
         }
-        String contextApp = MultiTenancyContext.getAppCode();
         if (!StringUtils.hasText(metadata.appCode())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metadata.appCode is required");
         }
         if (!StringUtils.hasText(metadata.deploymentTarget())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metadata.deploymentTarget is required");
         }
-        if (StringUtils.hasText(contextApp) && !contextApp.equals(metadata.appCode())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "metadata.appCode must match project context");
+        if (!projectRef.trim().equals(metadata.appCode().trim())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "metadata.appCode must match x-nubase-project-ref");
         }
         requireWorkerNameOwnedByApp(metadata.appCode(), metadata.workerName());
         if (serverFiles == null || serverFiles.isEmpty()) {
