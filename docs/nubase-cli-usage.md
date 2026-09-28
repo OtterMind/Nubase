@@ -211,7 +211,7 @@ NUBASE_RUN_ID=feature-123
 # 默认 false。开启后 sql_execute 才能执行 SQL。
 NUBASE_ALLOW_SQL_EXECUTE=true
 
-# 默认 false。drop/truncate 等危险 SQL 仍会被拦截。
+# 默认 false。drop/truncate 等危险 SQL 及无法可靠分类的 SQL 都会被拦截。
 NUBASE_ALLOW_DANGEROUS_SQL=false
 
 # 默认 false。开启后才允许创建/删除 bucket、创建/删除用户、签发/吊销 gateway key。
@@ -221,7 +221,7 @@ NUBASE_ALLOW_ADMIN_WRITE=true
 NUBASE_RECORD_MIGRATIONS=true
 ```
 
-建议：日常给 Agent 使用时只开只读能力；需要改 schema 时先让 Agent 调 `sql_dry_run`，确认后再临时开启 `NUBASE_ALLOW_SQL_EXECUTE=true`。
+无法分类的 SQL 会返回独立错误码 `UNCLASSIFIED_SQL_BLOCKED`。建议：日常给 Agent 使用时只开只读能力；需要改 schema 时先让 Agent 调 `sql_dry_run`，确认后再临时开启 `NUBASE_ALLOW_SQL_EXECUTE=true`。
 
 ## 4. 在 Codex 中使用
 
