@@ -60,6 +60,8 @@ public class SecurityConfig {
                         .requestMatchers("/storage/v1/**").permitAll()
                         // MCP service endpoints
                         .requestMatchers("/mcp/**").permitAll()
+                        // Agent metadata endpoints (apikey handled in UnifiedMultiTenancyFilter)
+                        .requestMatchers("/agent/v1/**").permitAll()
                         // AI Gateway DATA PLANE (authenticated by GatewayApiKeyAuthFilter via nbk_ keys)
                         .requestMatchers("/v1/**").permitAll()
                         .requestMatchers("/ai/**").permitAll()
