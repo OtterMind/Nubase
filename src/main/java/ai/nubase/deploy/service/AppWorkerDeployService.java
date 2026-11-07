@@ -84,7 +84,8 @@ public class AppWorkerDeployService {
                     plainBindings(metadata),
                     secretBindings(metadata),
                     serverBundle,
-                    assets
+                    assets,
+                    Boolean.TRUE.equals(metadata.replaceSecretBindings())
             ));
 
             deploymentService.recordStepForProjectRef(appCode, deployment.id(), new RecordDeploymentStepRequest(

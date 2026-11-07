@@ -197,6 +197,124 @@ class CloudflareAppWorkerDeployerTest {
         }
     }
 
+    private static AppWorkerDeploymentRequest secretRequest(Map<String, String> secrets, boolean replace) {
+        return new AppWorkerDeploymentRequest(
+                "appabc",
+                "v2",
+                AppWorkerDeploymentTarget.PREVIEW,
+                "appabc",
+                "server/index.js",
+                "server/index.js",
+                "preview-appabc.ottermind.app",
+                "2026-06-17",
+                List.of("nodejs_compat"),
+                Map.of(),
+                secrets,
+                List.of(new AppWorkerDeploymentRequest.AppWorkerFile(
+                        "server/index.js",
+                        "export default { async fetch(){ return new Response('ok') } }".getBytes(StandardCharsets.UTF_8),
+                        "application/javascript+module"
+                )),
+                List.of(),
+                replace
+        );
+    }
+
+    private static MockResponse assetSession() {
+        return new MockResponse().setResponseCode(200).setBody("""
+                {"success":true,"result":{"jwt":"completion-token","buckets":[]}}
+                """);
+    }
+
+    private static MockResponse scriptUploaded() {
+        return new MockResponse().setResponseCode(200).setBody("""
+                {"success":true,"result":{"id":"appabc","etag":"cf-version-2"}}
+                """);
+    }
+
+    @Test
+    void replaceSecretBindingsDeletesUndeclaredSecretsBeforeUpload() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(assetSession());
+            server.enqueue(new MockResponse().setResponseCode(200).setBody("""
+                    {"success":true,"result":[{"name":"KEEP_ME","type":"secret_text"},{"name":"REMOVED_KEY","type":"secret_text"}]}
+                    """));
+            server.enqueue(new MockResponse().setResponseCode(200).setBody("""
+                    {"success":true,"result":null}
+                    """));
+            server.enqueue(scriptUploaded());
+            server.start();
+            var deployer = new CloudflareAppWorkerDeployer(props(server), new ObjectMapper());
+
+            var result = deployer.deploy(secretRequest(Map.of("KEEP_ME", "new-value"), true));
+
+            assertThat(result.providerVersionId()).isEqualTo("cf-version-2");
+            String script = "/client/v4/accounts/acct/workers/dispatch/namespaces/preview-ns/scripts/appabc";
+            server.takeRequest(); // asset session
+            var list = server.takeRequest();
+            assertThat(list.getMethod()).isEqualTo("GET");
+            assertThat(list.getPath()).isEqualTo(script + "/secrets");
+            var delete = server.takeRequest();
+            assertThat(delete.getMethod()).isEqualTo("DELETE");
+            assertThat(delete.getPath()).isEqualTo(script + "/secrets/REMOVED_KEY");
+            var upload = server.takeRequest();
+            assertThat(upload.getMethod()).isEqualTo("PUT");
+            assertThat(upload.getPath()).isEqualTo(script);
+            assertThat(upload.getBody().readUtf8()).contains("\"KEEP_ME\"").doesNotContain("REMOVED_KEY");
+            assertThat(server.getRequestCount()).isEqualTo(4);
+        }
+    }
+
+    @Test
+    void replaceSecretBindingsSucceedsOnFirstDeployWhenScriptDoesNotExist() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(assetSession());
+            server.enqueue(new MockResponse().setResponseCode(404).setBody("""
+                    {"success":false,"errors":[{"code":10007,"message":"workers.api.error.script_not_found"}]}
+                    """));
+            server.enqueue(scriptUploaded());
+            server.start();
+            var deployer = new CloudflareAppWorkerDeployer(props(server), new ObjectMapper());
+
+            var result = deployer.deploy(secretRequest(Map.of(), true));
+
+            assertThat(result.status()).isEqualTo("deployed");
+            assertThat(server.getRequestCount()).isEqualTo(3);
+        }
+    }
+
+    @Test
+    void replaceSecretBindingsAbortsBeforeUploadWhenSecretsCannotBeListed() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(assetSession());
+            server.enqueue(new MockResponse().setResponseCode(403).setBody("""
+                    {"success":false,"errors":[{"code":10000,"message":"Authentication error"}]}
+                    """));
+            server.start();
+            var deployer = new CloudflareAppWorkerDeployer(props(server), new ObjectMapper());
+
+            assertThatThrownBy(() -> deployer.deploy(secretRequest(Map.of(), true)))
+                    .isInstanceOf(AppWorkerDeploymentException.class);
+            assertThat(server.getRequestCount()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void secretsAreLeftAloneUnlessReplacementIsRequested() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(assetSession());
+            server.enqueue(scriptUploaded());
+            server.start();
+            var deployer = new CloudflareAppWorkerDeployer(props(server), new ObjectMapper());
+
+            deployer.deploy(secretRequest(Map.of(), false));
+
+            server.takeRequest(); // asset session
+            assertThat(server.takeRequest().getMethod()).isEqualTo("PUT");
+            assertThat(server.getRequestCount()).isEqualTo(2);
+        }
+    }
+
     @Test
     void deployFailsClosedWhenTargetNamespaceIsMissing() throws Exception {
         try (MockWebServer server = new MockWebServer()) {

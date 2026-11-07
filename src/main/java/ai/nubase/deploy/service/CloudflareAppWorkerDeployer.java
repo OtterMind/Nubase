@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -22,6 +23,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -80,6 +82,11 @@ public class CloudflareAppWorkerDeployer implements AppWorkerDeployer {
         try {
             List<AppWorkerDeploymentRequest.AppWorkerFile> publicAssets = publicAssetFiles(request);
             AssetUpload upload = uploadAssets(publicAssets, workerName, dispatchNamespace);
+            if (request.replaceSecretBindings()) {
+                // Before the upload, so the returned version is the one that serves traffic:
+                // changing a secret afterwards would create a newer version.
+                deleteUndeclaredSecrets(request, workerName, dispatchNamespace);
+            }
             String providerVersionId = uploadWorker(request, workerName, dispatchNamespace, upload.completionJwt());
             String previewUrl = "https://" + normalizeHost(request.previewHost());
             return new AppWorkerDeploymentResult(
@@ -309,6 +316,47 @@ public class CloudflareAppWorkerDeployer implements AppWorkerDeployer {
                 .build();
         try (Response response = executeCloudflare(upload)) {
             return providerVersionId(readEnvelope(response));
+        }
+    }
+
+    /**
+     * Cloudflare keeps secret_text bindings across script uploads even when the upload omits them,
+     * so a secret the caller removed would otherwise stay readable by the worker.
+     */
+    private void deleteUndeclaredSecrets(
+            AppWorkerDeploymentRequest request,
+            String workerName,
+            String dispatchNamespace
+    ) throws IOException {
+        Set<String> declared = new HashSet<>();
+        if (request.secretTextBindings() != null) {
+            for (String name : request.secretTextBindings().keySet()) {
+                if (StringUtils.hasText(name)) declared.add(name.trim());
+            }
+        }
+        String secretsUrl = scriptUrl(workerName, dispatchNamespace) + "/secrets";
+        Map<String, Object> envelope;
+        try (Response response = executeCloudflare(new Request.Builder()
+                .url(secretsUrl)
+                .get()
+                .header("Authorization", "Bearer " + properties.getApiToken())
+                .build(), true)) {
+            if (response == null) return; // First deploy: the script does not exist yet.
+            envelope = readEnvelope(response);
+        }
+        if (!(envelope.get("result") instanceof List<?> secrets)) {
+            throw new AppWorkerDeploymentException("Cloudflare secret list response missing result");
+        }
+        for (Object secret : secrets) {
+            String name = secret instanceof Map<?, ?> map ? stringValue(map.get("name")) : null;
+            if (!StringUtils.hasText(name) || declared.contains(name)) continue;
+            try (Response ignored = executeCloudflare(new Request.Builder()
+                    .url(secretsUrl + "/" + URLEncoder.encode(name, StandardCharsets.UTF_8))
+                    .delete()
+                    .header("Authorization", "Bearer " + properties.getApiToken())
+                    .build(), true)) {
+                log.info("Deleted undeclared app worker secret: workerName={}, secret={}", workerName, name);
+            }
         }
     }
 

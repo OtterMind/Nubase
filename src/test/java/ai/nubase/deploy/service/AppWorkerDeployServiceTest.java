@@ -54,6 +54,53 @@ class AppWorkerDeployServiceTest {
     }
 
     @Test
+    void passesReplaceSecretBindingsToTheDeployer() throws Exception {
+        MultiTenancyContext.setContext(MultiTenancyContext.ContextData.builder()
+                .appCode("unrelated-tenant").build());
+        UUID deploymentId = UUID.randomUUID();
+        when(deploymentService.createForProjectRef(eq("appabc"), any(CreateDeploymentRequest.class))).thenReturn(new DeploymentResponse(
+                deploymentId,
+                "appabc",
+                "appabc",
+                AppDeployment.STATUS_RUNNING,
+                null,
+                Map.of(),
+                null,
+                null,
+                "v1",
+                Instant.now(),
+                Instant.now(),
+                null
+        ));
+        when(deployer.deploy(any(AppWorkerDeploymentRequest.class))).thenReturn(new AppWorkerDeploymentResult(
+                "cloudflare",
+                "preview",
+                "preview-ns",
+                "appabc",
+                "cf-version-1",
+                "https://preview-appabc.ottermind.app",
+                "deployed",
+                "asset-hash",
+                1,
+                Instant.parse("2026-06-17T00:00:00Z")
+        ));
+
+        var base = metadata();
+        var metadata = new AppWorkerDeployMetadata(
+                base.appCode(), base.version(), base.workerName(), base.mainModule(), base.serverEntrypointPath(),
+                base.clientDistPath(), base.previewHost(), base.deploymentTarget(), base.compatibilityDate(),
+                base.compatibilityFlags(), base.envBindings(), base.plainTextBindings(), base.secretTextBindings(),
+                Boolean.TRUE
+        );
+
+        service.deployForProjectRef("appabc", metadata, List.of(serverFile()), List.of(assetFile()));
+
+        ArgumentCaptor<AppWorkerDeploymentRequest> request = ArgumentCaptor.forClass(AppWorkerDeploymentRequest.class);
+        verify(deployer).deploy(request.capture());
+        assertThat(request.getValue().replaceSecretBindings()).isTrue();
+    }
+
+    @Test
     void deploysAppWorkerAndRecordsDeploymentSteps() {
         MultiTenancyContext.setContext(MultiTenancyContext.ContextData.builder()
                 .appCode("unrelated-tenant").build());
@@ -99,6 +146,7 @@ class AppWorkerDeployServiceTest {
         verify(deployer).deploy(request.capture());
         assertThat(request.getValue().appCode()).isEqualTo("appabc");
         assertThat(request.getValue().deploymentTarget()).isEqualTo(AppWorkerDeploymentTarget.PREVIEW);
+        assertThat(request.getValue().replaceSecretBindings()).isFalse();
         assertThat(request.getValue().mainModule()).isEqualTo("server/index.js");
         assertThat(request.getValue().plainTextBindings()).containsEntry("NUBASE_RUNTIME_MODE", "same-origin-proxy");
         assertThat(request.getValue().plainTextBindings()).containsEntry("NUBASE_PROJECT_REF", "appabc");

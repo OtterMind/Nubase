@@ -132,8 +132,33 @@ public final class AppDeploymentDtos {
             List<String> compatibilityFlags,
             Map<String, String> envBindings,
             Map<String, String> plainTextBindings,
-            Map<String, String> secretTextBindings
+            Map<String, String> secretTextBindings,
+            /*
+             * True when secretTextBindings is the worker's complete secret set: secrets it does
+             * not list are deleted. Cloudflare keeps secrets across uploads, so omitting one does
+             * not remove it. Off by default because a deleted secret cannot be recovered.
+             */
+            Boolean replaceSecretBindings
     ) {
+        public AppWorkerDeployMetadata(
+                String appCode,
+                String version,
+                String workerName,
+                String mainModule,
+                String serverEntrypointPath,
+                String clientDistPath,
+                String previewHost,
+                String deploymentTarget,
+                String compatibilityDate,
+                List<String> compatibilityFlags,
+                Map<String, String> envBindings,
+                Map<String, String> plainTextBindings,
+                Map<String, String> secretTextBindings
+        ) {
+            this(appCode, version, workerName, mainModule, serverEntrypointPath, clientDistPath, previewHost,
+                    deploymentTarget, compatibilityDate, compatibilityFlags, envBindings, plainTextBindings,
+                    secretTextBindings, null);
+        }
     }
 
     public record AppWorkerDeployResponse(
