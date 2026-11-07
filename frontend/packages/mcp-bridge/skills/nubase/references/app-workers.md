@@ -27,6 +27,7 @@ POST /deployments/admin/v1/app-workers/deploy   (multipart/form-data, service_ro
 - `metadata.appCode` must match the calling project context (enforced server-side).
 - A custom `workerName` must equal `appCode` or be namespaced under it (`<appCode>-<suffix>`, e.g. `appabc-preview`). The dispatch namespace is shared across tenants, so a worker name outside your appCode is rejected with 403.
 - `NUBASE_PROJECT_REF` and `NUBASE_APP_VERSION` are injected as bindings automatically and cannot be overridden; pass app config via `plainTextBindings` and secrets via `secretTextBindings`.
+- Cloudflare keeps secrets across deploys, so omitting a name from `secretTextBindings` does not remove it. Set `replaceSecretBindings: true` to treat `secretTextBindings` as the complete set: secrets it does not list are deleted permanently.
 - The deploy is recorded in the project's deployment history (`deployments_list` / `deployment_status`).
 
 ## Manage (after deploy)

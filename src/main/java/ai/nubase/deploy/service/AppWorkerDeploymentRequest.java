@@ -16,8 +16,29 @@ public record AppWorkerDeploymentRequest(
         Map<String, String> plainTextBindings,
         Map<String, String> secretTextBindings,
         List<AppWorkerFile> serverFiles,
-        List<AppWorkerFile> assetFiles
+        List<AppWorkerFile> assetFiles,
+        boolean replaceSecretBindings
 ) {
+    public AppWorkerDeploymentRequest(
+            String appCode,
+            String version,
+            AppWorkerDeploymentTarget deploymentTarget,
+            String workerName,
+            String mainModule,
+            String serverEntrypointPath,
+            String previewHost,
+            String compatibilityDate,
+            List<String> compatibilityFlags,
+            Map<String, String> plainTextBindings,
+            Map<String, String> secretTextBindings,
+            List<AppWorkerFile> serverFiles,
+            List<AppWorkerFile> assetFiles
+    ) {
+        this(appCode, version, deploymentTarget, workerName, mainModule, serverEntrypointPath, previewHost,
+                compatibilityDate, compatibilityFlags, plainTextBindings, secretTextBindings, serverFiles,
+                assetFiles, false);
+    }
+
     public record AppWorkerFile(
             String path,
             byte[] content,
