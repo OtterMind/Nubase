@@ -18,6 +18,8 @@ public class Routine {
     private List<RoutineParam> parameters;
     private String returnType;
     private boolean returnsSet;
+    /** True when the return type is a composite (table or row) type. */
+    private boolean returnsComposite;
     private String volatility; // VOLATILE, STABLE, IMMUTABLE
     private boolean hasVariadicParam;
 }

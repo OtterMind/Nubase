@@ -209,6 +209,48 @@ class PostgrestControllerTest {
         assertThat(servletResponse.getHeader("Preference-Applied")).isEqualTo("return=minimal");
     }
 
+    @Test
+    void scalarRpcResultIsReturnedAsBareJsonValue() throws Exception {
+        setTenantContext("public", true);
+        MockHttpServletRequest request = request("POST", "/rest/v1/rpc/allow_login");
+        ApiRequest apiRequest = apiRequest("public", "allow_login", "POST", Map.of("accept", "application/json"));
+        QueryPlan plan = QueryPlan.builder().type(QueryPlan.QueryType.CALL_FUNCTION).schema("public").table("allow_login").build();
+        when(requestParser.parseRpc(any(), any(), any())).thenReturn(apiRequest);
+        when(queryPlanner.plan(apiRequest)).thenReturn(plan);
+        when(queryExecutor.execute(plan, null, null)).thenReturn(QueryResult.builder()
+                .data(List.of(Map.of("result", true)))
+                .totalCount(1)
+                .scalar(true)
+                .scalarValue(true)
+                .build());
+
+        ResponseEntity<?> response = controller.handleRequest(request, new MockHttpServletResponse());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getContentType().toString()).isEqualTo("application/json");
+        assertThat(response.getBody()).isEqualTo("true");
+    }
+
+    @Test
+    void scalarRpcResultIgnoresObjectAcceptHeader() throws Exception {
+        setTenantContext("public", true);
+        MockHttpServletRequest request = request("GET", "/rest/v1/rpc/count_items");
+        ApiRequest apiRequest = apiRequest("public", "count_items", "GET",
+                Map.of("accept", "application/vnd.pgrst.object+json"));
+        QueryPlan plan = QueryPlan.builder().type(QueryPlan.QueryType.CALL_FUNCTION).schema("public").table("count_items").build();
+        when(requestParser.parseRpc(any(), any(), any())).thenReturn(apiRequest);
+        when(queryPlanner.plan(apiRequest)).thenReturn(plan);
+        when(queryExecutor.execute(plan, null, null)).thenReturn(QueryResult.builder()
+                .data(List.of(Map.of("result", 42)))
+                .scalar(true)
+                .scalarValue(42)
+                .build());
+
+        ResponseEntity<?> response = controller.handleRequest(request, new MockHttpServletResponse());
+
+        assertThat(response.getBody()).isEqualTo("42");
+    }
+
     private MockHttpServletRequest request(String method, String uri) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, uri);
         request.setRequestURI(uri);

@@ -301,11 +301,13 @@ public class SchemaCache {
                 p.proname as routine_name,
                 pg_get_function_result(p.oid) as return_type,
                 p.proretset as returns_set,
+                COALESCE(rt.typtype = 'c', false) as returns_composite,
                 p.provolatile as volatility,
                 p.provariadic > 0 as has_variadic,
                 obj_description(p.oid) as description
             FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
+            LEFT JOIN pg_type rt ON rt.oid = p.prorettype
             WHERE n.nspname = ANY(?)
                 AND p.prokind = 'f'
             ORDER BY schema_name, routine_name
@@ -331,6 +333,7 @@ public class SchemaCache {
                 .description(rs.getString("description"))
                 .returnType(rs.getString("return_type"))
                 .returnsSet(rs.getBoolean("returns_set"))
+                .returnsComposite(rs.getBoolean("returns_composite"))
                 .volatility(volatility)
                 .hasVariadicParam(rs.getBoolean("has_variadic"))
                 .parameters(new ArrayList<>())
