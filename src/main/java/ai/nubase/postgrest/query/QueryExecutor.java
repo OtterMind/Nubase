@@ -708,14 +708,43 @@ public class QueryExecutor {
         // Convert PostgreSQL arrays to Java Lists
         rows = convertPgArraysToLists(rows);
 
-        // For scalar functions, the result is in a "result" column
-        // We might want to unwrap it depending on preferences
-
         QueryResult.QueryResultBuilder builder = QueryResult.builder()
                 .data(rows)
                 .totalCount(rows.size());
 
+        // PostgREST answers scalar functions with the bare value (`true`, `42`),
+        // and SETOF scalar functions with an array of values, not wrapped rows.
+        SchemaCache schemaCache = getSchemaCache();
+        Routine routine = schemaCache != null ? schemaCache.getRoutine(plan.getSchema(), plan.getTable()) : null;
+        if (returnsScalar(routine)) {
+            if (!routine.isReturnsSet()) {
+                Object value = "void".equalsIgnoreCase(routine.getReturnType().trim()) || rows.isEmpty()
+                        ? null
+                        : rows.get(0).get("result");
+                builder.scalar(true).scalarValue(value);
+            } else if (rows.stream().allMatch(row -> row.size() == 1)) {
+                List<Object> values = new ArrayList<>(rows.size());
+                for (Map<String, Object> row : rows) {
+                    values.add(row.values().iterator().next());
+                }
+                builder.scalar(true).scalarValue(values);
+            }
+        }
+
         return builder.build();
+    }
+
+    /**
+     * True when the function returns a base or domain type (or a set of them),
+     * which PostgREST serializes as bare JSON values. Composite, record and
+     * TABLE(...) results keep the row shape.
+     */
+    static boolean returnsScalar(Routine routine) {
+        if (routine == null || routine.isReturnsComposite() || routine.getReturnType() == null) {
+            return false;
+        }
+        String type = routine.getReturnType().trim().toLowerCase(java.util.Locale.ROOT);
+        return !type.isEmpty() && !type.startsWith("table") && !type.contains("record");
     }
 
     private void buildWhereClause(StringBuilder sql, QueryPlan plan) {

@@ -424,6 +424,13 @@ public class PostgrestController {
             }
         }
 
+        // Scalar RPC results are sent as the bare JSON value, like PostgREST.
+        if (result.isScalar()) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(objectMapper.writeValueAsString(result.getScalarValue()));
+        }
+
         // Inspect the Accept header to decide the response format
         String acceptHeader = apiRequest.getHeaders().get("accept");
         if (acceptHeader == null) {
