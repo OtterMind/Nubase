@@ -119,6 +119,11 @@ zenmux:
 
 # Supabase Auth configuration
 nubase:
+  mcp:
+    sql:
+      # DANGEROUS and unclassified SQL are blocked by default in direct MCP execution.
+      allow-dangerous: ${NUBASE_ALLOW_DANGEROUS_SQL:false}
+
   # Cache backend: caffeine (in-process, default — no external dependency) or redis
   # (distributed, required for multi-node deployments where caches must stay coherent).
   # Per-region TTL configured in MultiDatabaseConfiguration; Redis connection details

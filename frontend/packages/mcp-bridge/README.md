@@ -134,7 +134,7 @@ The MCP config's `env` block gates what the agent may do. Reads are always allow
 | --- | --- | --- |
 | `NUBASE_ALLOW_SQL_EXECUTE` | **on** | `sql_execute` (run SQL) |
 | `NUBASE_ALLOW_ADMIN_WRITE` | **on** | create/delete buckets & users, issue/revoke gateway keys |
-| `NUBASE_ALLOW_DANGEROUS_SQL` | **off** | SQL classified DANGEROUS (DROP/TRUNCATE/...) |
+| `NUBASE_ALLOW_DANGEROUS_SQL` | **off** | SQL classified DANGEROUS or containing an unclassified statement |
 
 `install-skills` writes SQL-execute and admin-write into the config by default; dangerous SQL stays off. Opt out per install with `--no-sql-execute` / `--no-admin-write`, or opt into dangerous SQL with `--allow-dangerous-sql`. You can also edit the flags directly in `.mcp.json` (or `.codex/config.toml`) afterwards.
 
@@ -174,7 +174,7 @@ NUBASE_ALLOW_SQL_EXECUTE=true
 NUBASE_ALLOW_DANGEROUS_SQL=false
 ```
 
-Use `sql_dry_run` before `sql_execute`. Dangerous SQL remains blocked unless `NUBASE_ALLOW_DANGEROUS_SQL=true`.
+Use `sql_dry_run` before `sql_execute`. Dangerous SQL and any batch containing an unclassified statement remain blocked unless `NUBASE_ALLOW_DANGEROUS_SQL=true`. Unclassified SQL returns `UNCLASSIFIED_SQL_BLOCKED` so it is not confused with a known destructive command.
 
 Every successful schema-changing `sql_execute` is recorded to an append-only `nubase.migrations` audit table; review it with `db_list_migrations`. Disable the trail with `NUBASE_RECORD_MIGRATIONS=false`.
 

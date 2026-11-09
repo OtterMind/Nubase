@@ -13,6 +13,7 @@ import ai.nubase.auth.dto.response.admin.ExportRlsPoliciesResponse;
 import ai.nubase.auth.dto.response.admin.SqlExecutionResponse;
 import ai.nubase.common.context.MultiTenancyContext;
 import ai.nubase.common.enums.DatabaseInitStatus;
+import ai.nubase.mcp.safety.SqlAnalysis;
 import ai.nubase.mcp.safety.SqlRisk;
 import ai.nubase.mcp.safety.SqlRiskClassifier;
 import ai.nubase.postgrest.multidb.DatabaseConfig;
@@ -23,6 +24,7 @@ import ai.nubase.postgrest.schema.SchemaCache;
 import ai.nubase.postgrest.schema.Table;
 import com.alibaba.fastjson2.JSON;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
@@ -44,6 +46,8 @@ public class DatabaseMcpTools {
     private final RlsPolicyExportService rlsPolicyExportService;
     private final DatabaseInitService databaseInitService;
     private final SqlRiskClassifier sqlRiskClassifier;
+    @Value("${nubase.mcp.sql.allow-dangerous:${NUBASE_ALLOW_DANGEROUS_SQL:false}}")
+    private boolean allowDangerousSql;
     /**
      * List all tables in specified schemas
      * Compatible with Supabase MCP's list_tables tool
@@ -195,7 +199,12 @@ public class DatabaseMcpTools {
                 return guard;
             }
             log.info("MCP_Tool_USED- executeSql called");
-            SqlRisk risk = sqlRiskClassifier.classify(sqlQuery);
+            SqlAnalysis analysis = sqlRiskClassifier.analyze(sqlQuery);
+            Map<String, Object> riskBlock = blockedSqlResponse(analysis, false);
+            if (riskBlock != null && !allowDangerousSql) {
+                return riskBlock;
+            }
+            SqlRisk risk = analysis.risk();
             DatabaseConfig dbConfig = MultiTenancyContext.getDatabaseConfig();
             if (dbConfig == null || !DatabaseInitStatus.INITIALIZED.name().equals(dbConfig.getInitStatus())) {
                 return Map.of("error", "Database context not found, please ensure the database is initialized");
@@ -253,24 +262,20 @@ public class DatabaseMcpTools {
 
     @Tool(description = "Preview SQL risk and statement count without executing it. Use before executeSql for schema or data changes.")
     public Object executeSqlDryRun(String sqlQuery) {
-        SqlRisk risk = sqlRiskClassifier.classify(sqlQuery);
-        int statementCount = sqlRiskClassifier.countStatements(sqlQuery);
-        if (risk == SqlRisk.DANGEROUS) {
-            return Map.of(
-                    "success", true,
-                    "risk", risk.name(),
-                    "statementCount", statementCount,
-                    "executable", false,
-                    "blocked", true,
-                    "error", "Dangerous SQL is blocked and was not transaction-validated"
-            );
+        SqlAnalysis analysis = sqlRiskClassifier.analyze(sqlQuery);
+        Map<String, Object> riskBlock = blockedSqlResponse(analysis, true);
+        if (riskBlock != null && !allowDangerousSql) {
+            return riskBlock;
         }
+        SqlRisk risk = analysis.risk();
+        int statementCount = analysis.statementCount();
 
         if (!MultiTenancyContext.isServiceRole()) {
             return Map.of(
                     "success", false,
                     "risk", risk.name(),
                     "statementCount", statementCount,
+                    "hasUnknown", analysis.hasUnknown(),
                     "executable", false,
                     "error", "Cannot dry-run SQL: service_role MCP apikey is required"
             );
@@ -282,6 +287,7 @@ public class DatabaseMcpTools {
                     "success", false,
                     "risk", risk.name(),
                     "statementCount", statementCount,
+                    "hasUnknown", analysis.hasUnknown(),
                     "executable", false,
                     "error", "Database context not found, please ensure the database is initialized"
             );
@@ -295,6 +301,7 @@ public class DatabaseMcpTools {
                     "success", false,
                     "risk", risk.name(),
                     "statementCount", statementCount,
+                    "hasUnknown", analysis.hasUnknown(),
                     "executable", false,
                     "error", response.getError() != null ? response.getError() : "SQL dry-run failed",
                     "executionTimeMs", response.getExecutionTimeMs() != null ? response.getExecutionTimeMs() : 0
@@ -304,10 +311,41 @@ public class DatabaseMcpTools {
                 "success", true,
                 "risk", risk.name(),
                 "statementCount", statementCount,
+                "hasUnknown", analysis.hasUnknown(),
                 "executable", true,
                 "results", response.getResults() != null ? response.getResults() : List.of(),
                 "executionTimeMs", response.getExecutionTimeMs() != null ? response.getExecutionTimeMs() : 0
         );
+    }
+
+    private Map<String, Object> blockedSqlResponse(SqlAnalysis analysis, boolean dryRun) {
+        if (analysis.risk() == SqlRisk.DANGEROUS) {
+            return Map.of(
+                    "success", dryRun,
+                    "code", "DANGEROUS_SQL_BLOCKED",
+                    "risk", analysis.risk().name(),
+                    "hasUnknown", analysis.hasUnknown(),
+                    "statementCount", analysis.statementCount(),
+                    "executable", false,
+                    "blocked", true,
+                    "error", "Dangerous SQL is blocked and was not transaction-validated",
+                    "remedy", "Set NUBASE_ALLOW_DANGEROUS_SQL=true only after confirming the destructive operation"
+            );
+        }
+        if (analysis.hasUnknown()) {
+            return Map.of(
+                    "success", dryRun,
+                    "code", "UNCLASSIFIED_SQL_BLOCKED",
+                    "risk", analysis.risk().name(),
+                    "hasUnknown", true,
+                    "statementCount", analysis.statementCount(),
+                    "executable", false,
+                    "blocked", true,
+                    "error", "At least one statement could not be safely classified and is blocked by default",
+                    "remedy", "Review the SQL, then set NUBASE_ALLOW_DANGEROUS_SQL=true only if the operation is trusted"
+            );
+        }
+        return null;
     }
 
     /**

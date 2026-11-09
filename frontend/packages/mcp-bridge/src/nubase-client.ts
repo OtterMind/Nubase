@@ -1,6 +1,6 @@
 import { requiredString } from './args.js';
 import type { BridgeConfig } from './config.js';
-import { classifySql, countStatements } from './sql-risk.js';
+import { analyzeSql } from './sql-risk.js';
 
 export class NubaseClient {
   constructor(private readonly config: BridgeConfig) {}
@@ -732,12 +732,11 @@ export class NubaseClient {
 
   sqlDryRun(args: Record<string, unknown>) {
     const sql = requiredString(args.sql, 'sql');
-    const risk = classifySql(sql);
+    const analysis = analyzeSql(sql);
     return {
       success: true,
-      risk,
-      statementCount: countStatements(sql),
-      executable: risk !== 'DANGEROUS',
+      ...analysis,
+      executable: analysis.risk !== 'DANGEROUS' && !analysis.hasUnknown,
     };
   }
 
@@ -761,6 +760,16 @@ export class NubaseClient {
         error: 'This statement is classified DANGEROUS (e.g. drop/truncate/bulk delete) and is blocked by default.',
         remedy: 'Set NUBASE_ALLOW_DANGEROUS_SQL=true to allow it, and confirm the operation with the user first.',
         userAction: 'Confirm the destructive intent with the user, then ask them to set NUBASE_ALLOW_DANGEROUS_SQL=true.',
+        dryRun,
+      };
+    }
+    if (dryRun.hasUnknown && !this.config.allowDangerousSql) {
+      return {
+        success: false,
+        code: 'UNCLASSIFIED_SQL_BLOCKED',
+        error: 'At least one statement could not be safely classified and is blocked by default.',
+        remedy: 'Review the unclassified SQL, then set NUBASE_ALLOW_DANGEROUS_SQL=true only if the operation is trusted.',
+        userAction: 'Confirm the unclassified SQL with the user before asking them to enable dangerous SQL.',
         dryRun,
       };
     }
